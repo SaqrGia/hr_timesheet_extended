@@ -1,6 +1,7 @@
 from odoo import models, fields, api, _
 from odoo.exceptions import UserError, ValidationError
 from datetime import datetime, timedelta
+import logging
 
 
 class AccountAnalyticLine(models.Model):
@@ -14,7 +15,7 @@ class AccountAnalyticLine(models.Model):
         ('department_approved', 'Department Head Approved'),
         ('hr_approved', 'HR Approved'),
         ('rejected', 'Rejected'),
-    ], string='Status', default='draft', tracking=True)
+    ], string='Status', default='draft', tracking=True, copy=False)
 
     # Fields to track who approved and when
     manager_id = fields.Many2one('res.users', string='Manager', related='employee_id.parent_id.user_id', store=False)
@@ -35,13 +36,88 @@ class AccountAnalyticLine(models.Model):
     company_id = fields.Many2one('res.company', string='Company', related='employee_id.company_id', store=True)
 
     # Computed fields for totals (will be displayed in the footer)
-    total_hours = fields.Float(string='Total Hours', compute='_compute_total_hours', store=True)
-    minimum_hours = fields.Float(string='Minimum Work Hours', compute='_compute_minimum_hours', store=True)
-    overtime_hours = fields.Float(string='Overtime Hours', compute='_compute_overtime_hours', store=True)
+    total_hours = fields.Float(string='Total Hours', compute='_compute_total_hours', store=True, compute_sudo=True,
+                               group_operator="sum")
+    minimum_hours = fields.Float(string='Minimum Work Hours', compute='_compute_minimum_hours', store=True,
+                                 compute_sudo=True, group_operator="sum")
+    overtime_hours = fields.Float(string='Overtime Hours', compute='_compute_overtime_hours', store=True,
+                                  compute_sudo=True, group_operator="sum")
 
     # Link to approval record
     timesheet_approval_id = fields.Many2one('hr.timesheet.approval', string='Timesheet Approval')
 
+    def action_create_timesheet_approval(self):
+        self.ensure_one()
+
+        # تحديد تاريخ البداية والنهاية من الأسبوع الحالي
+        today = fields.Date.context_today(self)
+        # اليوم الأول من الأسبوع (الإثنين)
+        first_day = today - timedelta(days=today.weekday())
+        # اليوم الأخير من الأسبوع (الأحد)
+        last_day = first_day + timedelta(days=6)
+
+        # البحث عن جميع سجلات الجدول الزمني للموظف في هذا الأسبوع
+        timesheet_lines = self.search([
+            ('employee_id', '=', self.employee_id.id),
+            ('date', '>=', first_day),
+            ('date', '<=', last_day),
+            ('project_id', '!=', False)
+        ])
+
+        # التحقق من عدم وجود طلب موافقة سابق لنفس الفترة
+        existing_approval = self.env['hr.timesheet.approval'].search([
+            ('employee_id', '=', self.employee_id.id),
+            ('date_start', '=', first_day),
+            ('date_end', '=', last_day),
+            ('state', '!=', 'rejected')
+        ], limit=1)
+
+        if existing_approval:
+            raise UserError(_("يوجد بالفعل طلب موافقة للفترة من %s إلى %s") % (first_day, last_day))
+
+        # التحقق من وجود سجلات جدول زمني
+        if not timesheet_lines:
+            raise UserError(_("لا توجد سجلات جدول زمني في الفترة من %s إلى %s") % (first_day, last_day))
+
+        # إنشاء سجل موافقة جديد
+        approval_vals = {
+            'employee_id': self.employee_id.id,
+            'date_start': first_day,
+            'date_end': last_day,
+            'timesheet_line_ids': [(6, 0, timesheet_lines.ids)],
+            'state': 'draft',
+        }
+
+        timesheet_approval = self.env['hr.timesheet.approval'].create(approval_vals)
+
+        # تحديث سجلات الجدول الزمني لربطها بطلب الموافقة
+        timesheet_lines.write({
+            'timesheet_approval_id': timesheet_approval.id
+        })
+
+        # عرض سجل الموافقة الجديد
+        return {
+            'name': _('طلب موافقة جدول زمني'),
+            'type': 'ir.actions.act_window',
+            'res_model': 'hr.timesheet.approval',
+            'res_id': timesheet_approval.id,
+            'view_mode': 'form',
+            'target': 'current',
+        }
+
+    @api.model
+    def create_weekly_approval_wizard(self):
+        """عرض معالج إنشاء طلب موافقة أسبوعي"""
+        return {
+            'name': _('إنشاء طلب موافقة أسبوعي'),
+            'type': 'ir.actions.act_window',
+            'res_model': 'hr.timesheet.approval.wizard',
+            'view_mode': 'form',
+            'target': 'new',
+            'context': {
+                'default_employee_id': self.env.user.employee_id.id,
+            }
+        }
     @api.depends('employee_id')
     def _compute_manager_id(self):
         for line in self:
@@ -263,3 +339,43 @@ class AccountAnalyticLine(models.Model):
         ])
         for activity in activities:
             activity.unlink()
+
+    # Allow for batch approval actions from the grid view
+    @api.model
+    def action_submit_selected(self, ids):
+        """Submit multiple timesheets for approval"""
+        records = self.browse(ids)
+        for record in records:
+            if record.state == 'draft':
+                record.action_submit()
+        return True
+
+    @api.model
+    def action_manager_approve_selected(self, ids):
+        """Manager approve multiple timesheets"""
+        records = self.browse(ids)
+        for record in records:
+            if record.state == 'submitted' and self.env.user == record.manager_id:
+                record.action_manager_approve()
+        return True
+
+    @api.model
+    def action_department_approve_selected(self, ids):
+        """Department head approve multiple timesheets"""
+        records = self.browse(ids)
+        for record in records:
+            if record.state == 'manager_approved' and self.env.user == record.department_head_id:
+                record.action_department_approve()
+        return True
+
+    @api.model
+    def action_hr_approve_selected(self, ids):
+        """HR approve multiple timesheets"""
+        records = self.browse(ids)
+        if not self.env.user.has_group('hr.group_hr_manager'):
+            raise UserError(_("Only HR managers can perform the final approval."))
+
+        for record in records:
+            if record.state == 'department_approved':
+                record.action_hr_approve()
+        return True
