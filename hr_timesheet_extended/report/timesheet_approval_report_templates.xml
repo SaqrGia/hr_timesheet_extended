@@ -1,0 +1,291 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Timesheet Approval Report View -->
+    <record id="view_timesheet_approval_report_pivot" model="ir.ui.view">
+        <field name="name">timesheet.approval.report.pivot</field>
+        <field name="model">timesheet.approval.report</field>
+        <field name="arch" type="xml">
+            <pivot string="Timesheet Approval Analysis" display_quantity="true">
+                <field name="date_start" type="row" interval="month"/>
+                <field name="employee_id" type="row"/>
+                <field name="department_id" type="col"/>
+                <field name="total_hours" type="measure"/>
+                <field name="overtime_hours" type="measure"/>
+                <field name="time_to_manager_approval" type="measure"/>
+                <field name="time_to_department_approval" type="measure"/>
+                <field name="time_to_hr_approval" type="measure"/>
+                <field name="total_approval_time" type="measure"/>
+            </pivot>
+        </field>
+    </record>
+
+    <record id="view_timesheet_approval_report_graph" model="ir.ui.view">
+        <field name="name">timesheet.approval.report.graph</field>
+        <field name="model">timesheet.approval.report</field>
+        <field name="arch" type="xml">
+            <graph string="Timesheet Approval Analysis" type="bar">
+                <field name="date_start" type="row" interval="month"/>
+                <field name="department_id" type="col"/>
+                <field name="total_hours" type="measure"/>
+            </graph>
+        </field>
+    </record>
+
+    <record id="view_timesheet_approval_report_search" model="ir.ui.view">
+        <field name="name">timesheet.approval.report.search</field>
+        <field name="model">timesheet.approval.report</field>
+        <field name="arch" type="xml">
+            <search string="Timesheet Approval Analysis">
+                <field name="employee_id"/>
+                <field name="department_id"/>
+                <filter string="My Department" name="my_department" domain="[('department_id.manager_id.user_id', '=', uid)]"/>
+                <separator/>
+                <filter string="Draft" name="draft" domain="[('state', '=', 'draft')]"/>
+                <filter string="Submitted" name="submitted" domain="[('state', '=', 'submitted')]"/>
+                <filter string="Manager Approved" name="manager_approved" domain="[('state', '=', 'manager_approved')]"/>
+                <filter string="Department Approved" name="department_approved" domain="[('state', '=', 'department_approved')]"/>
+                <filter string="HR Approved" name="hr_approved" domain="[('state', '=', 'hr_approved')]"/>
+                <filter string="Rejected" name="rejected" domain="[('state', '=', 'rejected')]"/>
+                <separator/>
+                <filter string="Date" name="date" date="date_start"/>
+                <group expand="0" string="Group By">
+                    <filter string="Employee" name="employee" context="{'group_by': 'employee_id'}"/>
+                    <filter string="Department" name="department" context="{'group_by': 'department_id'}"/>
+                    <filter string="Status" name="status" context="{'group_by': 'state'}"/>
+                    <filter string="Start Date" name="date_start" context="{'group_by': 'date_start:month'}"/>
+                    <filter string="Manager" name="manager" context="{'group_by': 'manager_id'}"/>
+                    <filter string="Department Head" name="department_head" context="{'group_by': 'department_head_id'}"/>
+                    <filter string="HR Manager" name="hr_manager" context="{'group_by': 'hr_manager_id'}"/>
+                    <filter string="Company" name="company" context="{'group_by': 'company_id'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <record id="action_timesheet_approval_report" model="ir.actions.act_window">
+        <field name="name">Timesheet Approval Analysis</field>
+        <field name="res_model">timesheet.approval.report</field>
+        <field name="view_mode">pivot,graph</field>
+        <field name="search_view_id" ref="view_timesheet_approval_report_search"/>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                No timesheet approval data available
+            </p>
+            <p>
+                This report provides analysis of timesheet approvals, including approval times and statistical data.
+            </p>
+        </field>
+    </record>
+
+    <!-- Add report to menu -->
+    <menuitem id="menu_timesheet_approval_report"
+              name="Timesheet Approval Analysis"
+              parent="hr_timesheet.menu_timesheets_reports"
+              action="action_timesheet_approval_report"
+              sequence="30"
+              groups="hr_timesheet.group_hr_timesheet_user,hr.group_hr_manager"/>
+
+    <!-- Print Timesheet Approval Form Template -->
+    <template id="report_timesheet_approval_document">
+        <t t-call="web.external_layout">
+            <t t-set="o" t-value="o.with_context(lang=lang)"/>
+            <div class="page">
+                <div class="oe_structure"/>
+                <div class="row mt32 mb32">
+                    <div class="col-6">
+                        <h2>Timesheet Approval <span t-field="o.name"/></h2>
+                    </div>
+                    <div class="col-6">
+                        <div class="float-right">
+                            <div t-if="o.state == 'draft'" class="badge badge-secondary">
+                                <span>Draft</span>
+                            </div>
+                            <div t-elif="o.state == 'submitted'" class="badge badge-primary">
+                                <span>Submitted</span>
+                            </div>
+                            <div t-elif="o.state == 'manager_approved'" class="badge badge-warning">
+                                <span>Manager Approved</span>
+                            </div>
+                            <div t-elif="o.state == 'department_approved'" class="badge badge-warning">
+                                <span>Department Approved</span>
+                            </div>
+                            <div t-elif="o.state == 'hr_approved'" class="badge badge-success">
+                                <span>HR Approved</span>
+                            </div>
+                            <div t-elif="o.state == 'rejected'" class="badge badge-danger">
+                                <span>Rejected</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="row mt32 mb32">
+                    <div class="col-6">
+                        <strong>Employee:</strong> <span t-field="o.employee_id.name"/>
+                        <br/>
+                        <strong>Department:</strong> <span t-field="o.department_id.name"/>
+                        <br/>
+                        <strong>Period:</strong> <span t-field="o.date_start"/> to <span t-field="o.date_end"/>
+                    </div>
+                    <div class="col-6">
+                        <strong>Total Hours:</strong> <span t-field="o.total_hours" t-options='{"widget": "float_time"}'/>
+                        <br/>
+                        <strong>Minimum Hours:</strong> <span t-field="o.minimum_hours" t-options='{"widget": "float_time"}'/>
+                        <br/>
+                        <strong>Overtime Hours:</strong> <span t-field="o.overtime_hours" t-options='{"widget": "float_time"}'/>
+                    </div>
+                </div>
+
+                <h4>Timesheet Details</h4>
+                <table class="table table-sm o_main_table">
+                    <thead>
+                        <tr>
+                            <th class="text-left">Date</th>
+                            <th class="text-left">Project</th>
+                            <th class="text-left">Task</th>
+                            <th class="text-left">Description</th>
+                            <th class="text-right">Hours</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr t-foreach="o.timesheet_line_ids" t-as="line">
+                            <td class="text-left">
+                                <span t-field="line.date"/>
+                            </td>
+                            <td class="text-left">
+                                <span t-field="line.project_id.name"/>
+                            </td>
+                            <td class="text-left">
+                                <span t-field="line.task_id.name"/>
+                            </td>
+                            <td class="text-left">
+                                <span t-field="line.name"/>
+                            </td>
+                            <td class="text-right">
+                                <span t-field="line.unit_amount" t-options='{"widget": "float_time"}'/>
+                            </td>
+                        </tr>
+                    </tbody>
+                    <tfoot>
+                        <tr>
+                            <td colspan="4" class="text-right">
+                                <strong>Total</strong>
+                            </td>
+                            <td class="text-right">
+                                <strong t-esc="sum(o.timesheet_line_ids.mapped('unit_amount'))" t-options='{"widget": "float_time"}'/>
+                            </td>
+                        </tr>
+                    </tfoot>
+                </table>
+
+                <h4>Approval Details</h4>
+                <div class="row">
+                    <div class="col-12">
+                        <table class="table table-sm">
+                            <tr t-if="o.submitted_date">
+                                <td><strong>Submitted On:</strong></td>
+                                <td><span t-field="o.submitted_date"/></td>
+                            </tr>
+                            <tr t-if="o.manager_approval_date">
+                                <td><strong>Manager Approved On:</strong></td>
+                                <td><span t-field="o.manager_approval_date"/></td>
+                                <td><strong>Manager:</strong></td>
+                                <td><span t-field="o.manager_id.name"/></td>
+                            </tr>
+                            <tr t-if="o.department_approval_date">
+                                <td><strong>Department Head Approved On:</strong></td>
+                                <td><span t-field="o.department_approval_date"/></td>
+                                <td><strong>Department Head:</strong></td>
+                                <td><span t-field="o.department_head_id.name"/></td>
+                            </tr>
+                            <tr t-if="o.hr_approval_date">
+                                <td><strong>HR Approved On:</strong></td>
+                                <td><span t-field="o.hr_approval_date"/></td>
+                                <td><strong>HR Manager:</strong></td>
+                                <td><span t-field="o.hr_manager_id.name"/></td>
+                            </tr>
+                            <tr t-if="o.rejection_date">
+                                <td><strong>Rejected On:</strong></td>
+                                <td><span t-field="o.rejection_date"/></td>
+                                <td><strong>Rejected By:</strong></td>
+                                <td><span t-field="o.rejected_by.name"/></td>
+                            </tr>
+                            <tr t-if="o.rejection_reason">
+                                <td><strong>Rejection Reason:</strong></td>
+                                <td colspan="3"><span t-field="o.rejection_reason"/></td>
+                            </tr>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="row mt64">
+                    <div class="col-4 text-center">
+                        <div t-if="o.employee_signature">
+                            <img t-att-src="image_data_uri(o.employee_signature)" style="max-height: 80px;"/>
+                            <p>Employee Signature</p>
+                        </div>
+                        <div t-else="">
+                            <p>_____________________________</p>
+                            <p>Employee Signature</p>
+                        </div>
+                    </div>
+                    <div class="col-4 text-center">
+                        <div t-if="o.manager_signature">
+                            <img t-att-src="image_data_uri(o.manager_signature)" style="max-height: 80px;"/>
+                            <p>Manager Signature</p>
+                        </div>
+                        <div t-else="">
+                            <p>_____________________________</p>
+                            <p>Manager Signature</p>
+                        </div>
+                    </div>
+                    <div class="col-4 text-center">
+                        <div t-if="o.hr_signature">
+                            <img t-att-src="image_data_uri(o.hr_signature)" style="max-height: 80px;"/>
+                            <p>HR Signature</p>
+                        </div>
+                        <div t-else="">
+                            <p>_____________________________</p>
+                            <p>HR Signature</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="footer text-center small">
+                    <div class="row">
+                        <div class="col-4">إشعار مراجعة عدم تكرار الأعمال وطلب الصرف</div>
+                        <div class="col-4">التوقيع</div>
+                        <div class="col-4">التاريخ</div>
+                    </div>
+                    <div class="row">
+                        <div class="col-4">التوجيه باستكمال إجراءات الصرف</div>
+                        <div class="col-4">التوقيع</div>
+                        <div class="col-4">التاريخ</div>
+                    </div>
+                </div>
+
+                <div class="oe_structure"/>
+            </div>
+        </t>
+    </template>
+
+    <!-- Main template to print Timesheet Approval -->
+    <template id="report_timesheet_approval">
+        <t t-call="web.html_container">
+            <t t-foreach="docs" t-as="o">
+                <t t-call="hr_timesheet_extended.report_timesheet_approval_document"/>
+            </t>
+        </t>
+    </template>
+
+    <!-- Timesheet Approval Report Action -->
+    <record id="action_report_timesheet_approval" model="ir.actions.report">
+        <field name="name">Timesheet Approval Form</field>
+        <field name="model">hr.timesheet.approval</field>
+        <field name="report_type">qweb-pdf</field>
+        <field name="report_name">hr_timesheet_extended.report_timesheet_approval</field>
+        <field name="report_file">hr_timesheet_extended.report_timesheet_approval</field>
+        <field name="binding_model_id" ref="model_hr_timesheet_approval"/>
+        <field name="binding_type">report</field>
+    </record>
+</odoo>

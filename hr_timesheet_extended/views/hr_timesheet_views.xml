@@ -1,0 +1,131 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Inherit Timesheet List View -->
+    <record id="hr_timesheet_line_tree_inherit" model="ir.ui.view">
+        <field name="name">account.analytic.line.tree.inherit</field>
+        <field name="model">account.analytic.line</field>
+        <field name="inherit_id" ref="hr_timesheet.hr_timesheet_line_tree"/>
+        <field name="arch" type="xml">
+            <xpath expr="//field[@name='unit_amount']" position="after">
+                <field name="state" widget="badge"
+                    decoration-info="state == 'draft'"
+                    decoration-success="state == 'hr_approved'"
+                    decoration-primary="state == 'submitted'"
+                    decoration-warning="state in ['manager_approved', 'department_approved']"
+                    decoration-danger="state == 'rejected'"/>
+            </xpath>
+
+            <xpath expr="//tree" position="attributes">
+                <attribute name="decoration-muted">state == 'draft'</attribute>
+                <attribute name="decoration-success">state == 'hr_approved'</attribute>
+                <attribute name="decoration-info">state == 'submitted'</attribute>
+                <attribute name="decoration-warning">state in ['manager_approved', 'department_approved']</attribute>
+                <attribute name="decoration-danger">state == 'rejected'</attribute>
+            </xpath>
+
+            <!-- Add footer with totals -->
+            <xpath expr="//field[@name='unit_amount']" position="attributes">
+                <attribute name="sum">Total Hours</attribute>
+            </xpath>
+        </field>
+    </record>
+
+    <!-- Inherit Timesheet Form View -->
+    <record id="hr_timesheet_line_form_inherit" model="ir.ui.view">
+        <field name="name">account.analytic.line.form.inherit</field>
+        <field name="model">account.analytic.line</field>
+        <field name="inherit_id" ref="hr_timesheet.hr_timesheet_line_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//sheet/group" position="before">
+                <div class="oe_button_box" name="button_box">
+                    <button name="action_submit" string="Submit for Approval" type="object"
+                            class="oe_stat_button" icon="fa-paper-plane"
+                            invisible="state != 'draft'"/>
+                    <button name="action_manager_approve" string="Approve (Manager)" type="object"
+                            class="oe_stat_button" icon="fa-thumbs-up"
+                            invisible="state != 'submitted' or manager_id != uid"/>
+                    <button name="action_department_approve" string="Approve (Department Head)" type="object"
+                            class="oe_stat_button" icon="fa-thumbs-up"
+                            invisible="state != 'manager_approved' or department_head_id != uid"/>
+                    <button name="action_hr_approve" string="Approve (HR)" type="object"
+                            class="oe_stat_button" icon="fa-thumbs-up" groups="hr.group_hr_manager"
+                            invisible="state != 'department_approved'"/>
+                    <button name="action_reject" string="Reject" type="object"
+                            class="oe_stat_button" icon="fa-thumbs-down"
+                            invisible="state in ['draft', 'hr_approved', 'rejected']"/>
+                    <button name="action_reset_to_draft" string="Reset to Draft" type="object"
+                            class="oe_stat_button" icon="fa-undo"
+                            invisible="state in ['draft', 'hr_approved']"/>
+                </div>
+                <div class="alert alert-danger" role="alert"
+                     invisible="state != 'rejected'">
+                    <field name="rejection_reason" readonly="1"/>
+                    <field name="rejected_by" readonly="1" invisible="1"/>
+                    <div>Rejected by: <field name="rejected_by" readonly="1" nolabel="1"/></div>
+                    <div>Date: <field name="rejection_date" readonly="1" nolabel="1"/></div>
+                </div>
+            </xpath>
+
+            <xpath expr="//form/sheet/group" position="after">
+                <notebook>
+                    <page string="Approval Information" name="approval_info">
+                        <group>
+                            <group string="Status">
+                                <field name="state" widget="statusbar"
+                                    statusbar_visible="draft,submitted,manager_approved,department_approved,hr_approved"/>
+                                <field name="timesheet_approval_id" readonly="1" invisible="timesheet_approval_id == False"/>
+                            </group>
+                            <group string="Approval Dates" invisible="state == 'draft'">
+                                <field name="submitted_date" readonly="1" invisible="submitted_date == False"/>
+                                <field name="manager_approval_date" readonly="1" invisible="manager_approval_date == False"/>
+                                <field name="department_approval_date" readonly="1" invisible="department_approval_date == False"/>
+                                <field name="hr_approval_date" readonly="1" invisible="hr_approval_date == False"/>
+                            </group>
+                        </group>
+                        <group string="Approval Chain">
+                            <field name="manager_id" readonly="1"/>
+                            <field name="department_head_id" readonly="1"/>
+                            <field name="hr_manager_id" readonly="1" invisible="hr_manager_id == False"/>
+                        </group>
+                    </page>
+                </notebook>
+            </xpath>
+
+            <xpath expr="//field[@name='unit_amount']" position="after">
+                <field name="total_hours" invisible="1"/>
+                <field name="minimum_hours" invisible="1"/>
+                <field name="overtime_hours" invisible="1"/>
+            </xpath>
+        </field>
+    </record>
+
+    <!-- Add state filter in search view -->
+    <record id="hr_timesheet_line_search_inherit" model="ir.ui.view">
+        <field name="name">account.analytic.line.search.inherit</field>
+        <field name="model">account.analytic.line</field>
+        <field name="inherit_id" ref="hr_timesheet.hr_timesheet_line_search"/>
+        <field name="arch" type="xml">
+            <xpath expr="//search" position="inside">
+                <separator/>
+                <filter string="Draft" name="draft" domain="[('state', '=', 'draft')]"/>
+                <filter string="Submitted" name="submitted" domain="[('state', '=', 'submitted')]"/>
+                <filter string="Manager Approved" name="manager_approved" domain="[('state', '=', 'manager_approved')]"/>
+                <filter string="Department Approved" name="department_approved" domain="[('state', '=', 'department_approved')]"/>
+                <filter string="HR Approved" name="hr_approved" domain="[('state', '=', 'hr_approved')]"/>
+                <filter string="Rejected" name="rejected" domain="[('state', '=', 'rejected')]"/>
+                <separator/>
+                <filter string="To Approve" name="to_approve"
+                        domain="['|', '|',
+                                ('state', '=', 'submitted'),
+                                ('state', '=', 'manager_approved'),
+                                ('state', '=', 'department_approved')]"/>
+                <separator/>
+                <filter string="My Approvals" name="my_approvals" domain="['|',
+                        '&amp;', ('state', '=', 'submitted'), ('manager_id', '=', uid),
+                        '|',
+                        '&amp;', ('state', '=', 'manager_approved'), ('department_head_id', '=', uid),
+                        '&amp;', ('state', '=', 'department_approved'), ('employee_id.user_id', '!=', uid)]"/>
+            </xpath>
+        </field>
+    </record>
+</odoo>

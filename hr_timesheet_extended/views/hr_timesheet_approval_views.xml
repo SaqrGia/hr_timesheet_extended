@@ -1,0 +1,335 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Timesheet Approval Form View -->
+    <record id="view_hr_timesheet_approval_form" model="ir.ui.view">
+        <field name="name">hr.timesheet.approval.form</field>
+        <field name="model">hr.timesheet.approval</field>
+        <field name="arch" type="xml">
+            <form string="Timesheet Approval">
+                <header>
+                    <button name="action_submit" string="Submit for Approval" type="object"
+                            class="oe_highlight" invisible="state != 'draft'"/>
+                    <button name="action_manager_approve" string="Approve (Manager)" type="object"
+                            class="oe_highlight"
+                            invisible="state != 'submitted' or manager_id != uid"/>
+                    <button name="action_department_approve" string="Approve (Department Head)" type="object"
+                            class="oe_highlight"
+                            invisible="state != 'manager_approved' or department_head_id != uid"/>
+                    <button name="action_hr_approve" string="Approve (HR)" type="object"
+                            class="oe_highlight" groups="hr.group_hr_manager"
+                            invisible="state != 'department_approved'"/>
+                    <button name="action_reject" string="Reject" type="object"
+                            class="btn-danger"
+                            invisible="state in ['draft', 'hr_approved', 'rejected']"/>
+                    <button name="action_reset_to_draft" string="Reset to Draft" type="object"
+                            invisible="state in ['draft', 'hr_approved']"/>
+                    <field name="state" widget="statusbar" statusbar_visible="draft,submitted,manager_approved,department_approved,hr_approved"/>
+                </header>
+                <sheet>
+                    <div class="oe_title">
+                        <h1>
+                            <field name="name" readonly="1"/>
+                        </h1>
+                    </div>
+                    <div class="alert alert-danger" role="alert"
+                         invisible="state != 'rejected'">
+                        <field name="rejection_reason" readonly="1"/>
+                        <div>Rejected by: <field name="rejected_by" readonly="1" nolabel="1"/></div>
+                        <div>Date: <field name="rejection_date" readonly="1" nolabel="1"/></div>
+                    </div>
+                    <group>
+                        <group>
+                            <field name="employee_id" readonly="state != 'draft'"/>
+                            <field name="department_id" readonly="1"/>
+                            <field name="manager_id" readonly="1"/>
+                            <field name="department_head_id" readonly="1"/>
+                        </group>
+                        <group>
+                            <field name="date_start" readonly="state != 'draft'"/>
+                            <field name="date_end" readonly="state != 'draft'"/>
+                            <field name="total_hours" widget="float_time"/>
+                            <field name="minimum_hours" widget="float_time"/>
+                            <field name="overtime_hours" widget="float_time"/>
+                        </group>
+                    </group>
+                    <notebook>
+                        <page string="Timesheet Lines" name="timesheet_lines">
+                            <field name="timesheet_line_ids" readonly="state != 'draft'">
+                                <tree editable="bottom" decoration-muted="state == 'draft'"
+                                      decoration-info="state == 'submitted'"
+                                      decoration-warning="state in ['manager_approved', 'department_approved']"
+                                      decoration-success="state == 'hr_approved'"
+                                      decoration-danger="state == 'rejected'">
+                                    <field name="date"/>
+                                    <field name="project_id"/>
+                                    <field name="task_id" domain="[('project_id', '=', project_id)]"/>
+                                    <field name="name"/>
+                                    <field name="unit_amount" string="Duration" widget="float_time" sum="Total"/>
+                                    <field name="state" widget="badge"
+                                           decoration-info="state == 'draft'"
+                                           decoration-success="state == 'hr_approved'"
+                                           decoration-primary="state == 'submitted'"
+                                           decoration-warning="state in ['manager_approved', 'department_approved']"
+                                           decoration-danger="state == 'rejected'"/>
+                                </tree>
+                            </field>
+                        </page>
+                        <page string="Approval Information" name="approval_information">
+                            <group>
+                                <group string="Approval Dates" invisible="state == 'draft'">
+                                    <field name="submitted_date" readonly="1" invisible="submitted_date == False"/>
+                                    <field name="manager_approval_date" readonly="1" invisible="manager_approval_date == False"/>
+                                    <field name="department_approval_date" readonly="1" invisible="department_approval_date == False"/>
+                                    <field name="hr_approval_date" readonly="1" invisible="hr_approval_date == False"/>
+                                </group>
+                                <group string="HR Approval">
+                                    <field name="hr_manager_id" readonly="1" invisible="hr_manager_id == False"/>
+                                    <field name="notes" readonly="state in ['hr_approved', 'rejected']"/>
+                                </group>
+                            </group>
+                        </page>
+                        <page string="Summary" name="summary">
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <div class="o_timesheet_approval_summary">
+                                        <h3>Hours Summary</h3>
+                                        <table class="table table-bordered">
+                                            <tr class="bg-primary">
+                                                <th>Total</th>
+                                                <th class="text-right"><field name="total_hours" widget="float_time" nolabel="1"/></th>
+                                            </tr>
+                                            <tr>
+                                                <td>Minimum Work Hours</td>
+                                                <td class="text-right"><field name="minimum_hours" widget="float_time" nolabel="1"/></td>
+                                            </tr>
+                                            <tr>
+                                                <td>Overtime Hours</td>
+                                                <td class="text-right"><field name="overtime_hours" widget="float_time" nolabel="1"/></td>
+                                            </tr>
+                                        </table>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="o_timesheet_approval_signature">
+                                        <h3>Signatures</h3>
+                                        <div class="row">
+                                            <div class="col-6">
+                                                <div class="signature-box">
+                                                    <label for="employee_signature">Employee</label>
+                                                    <field name="employee_signature" widget="signature" readonly="state != 'draft'"/>
+                                                </div>
+                                            </div>
+                                            <div class="col-6">
+                                                <div class="signature-box">
+                                                    <label for="manager_signature">Manager</label>
+                                                    <field name="manager_signature" widget="signature"
+                                                           readonly="state != 'submitted' or manager_id != uid"/>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="row">
+                                            <div class="col-6">
+                                                <div class="signature-box">
+                                                    <label for="department_head_signature">Department Head</label>
+                                                    <field name="department_head_signature" widget="signature"
+                                                           readonly="state != 'manager_approved' or department_head_id != uid"/>
+                                                </div>
+                                            </div>
+                                            <div class="col-6">
+                                                <div class="signature-box">
+                                                    <label for="hr_signature">HR</label>
+                                                    <field name="hr_signature" widget="signature"
+                                                           readonly="state != 'department_approved' or hr_manager_id != uid"/>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </page>
+                    </notebook>
+                </sheet>
+                <div class="oe_chatter">
+                    <field name="message_follower_ids"/>
+                    <field name="activity_ids"/>
+                    <field name="message_ids"/>
+                </div>
+            </form>
+        </field>
+    </record>
+
+    <!-- Timesheet Approval Tree View -->
+    <record id="view_hr_timesheet_approval_tree" model="ir.ui.view">
+        <field name="name">hr.timesheet.approval.tree</field>
+        <field name="model">hr.timesheet.approval</field>
+        <field name="arch" type="xml">
+            <tree string="Timesheet Approvals" decoration-muted="state == 'draft'"
+                  decoration-info="state == 'submitted'"
+                  decoration-warning="state in ['manager_approved', 'department_approved']"
+                  decoration-success="state == 'hr_approved'"
+                  decoration-danger="state == 'rejected'">
+                <field name="name"/>
+                <field name="employee_id"/>
+                <field name="department_id"/>
+                <field name="date_start"/>
+                <field name="date_end"/>
+                <field name="total_hours" widget="float_time" sum="Total Hours"/>
+                <field name="overtime_hours" widget="float_time" sum="Total Overtime"/>
+                <field name="state" widget="badge"
+                       decoration-info="state == 'draft'"
+                       decoration-success="state == 'hr_approved'"
+                       decoration-primary="state == 'submitted'"
+                       decoration-warning="state in ['manager_approved', 'department_approved']"
+                       decoration-danger="state == 'rejected'"/>
+            </tree>
+        </field>
+    </record>
+
+    <!-- Timesheet Approval Search View -->
+    <record id="view_hr_timesheet_approval_search" model="ir.ui.view">
+        <field name="name">hr.timesheet.approval.search</field>
+        <field name="model">hr.timesheet.approval</field>
+        <field name="arch" type="xml">
+            <search string="Search Timesheet Approvals">
+                <field name="name"/>
+                <field name="employee_id"/>
+                <field name="department_id"/>
+                <field name="date_start"/>
+                <field name="date_end"/>
+                <filter string="My Timesheets" name="my_timesheets" domain="[('employee_id.user_id', '=', uid)]"/>
+                <separator/>
+                <filter string="Draft" name="draft" domain="[('state', '=', 'draft')]"/>
+                <filter string="Submitted" name="submitted" domain="[('state', '=', 'submitted')]"/>
+                <filter string="Manager Approved" name="manager_approved" domain="[('state', '=', 'manager_approved')]"/>
+                <filter string="Department Approved" name="department_approved" domain="[('state', '=', 'department_approved')]"/>
+                <filter string="HR Approved" name="hr_approved" domain="[('state', '=', 'hr_approved')]"/>
+                <filter string="Rejected" name="rejected" domain="[('state', '=', 'rejected')]"/>
+                <separator/>
+                <filter string="To Approve" name="to_approve"
+                        domain="['|', '|',
+                                ('state', '=', 'submitted'),
+                                ('state', '=', 'manager_approved'),
+                                ('state', '=', 'department_approved')]"/>
+                <separator/>
+                <filter string="My Approvals" name="my_approvals" domain="['|',
+                        '&amp;', ('state', '=', 'submitted'), ('manager_id', '=', uid),
+                        '|',
+                        '&amp;', ('state', '=', 'manager_approved'), ('department_head_id', '=', uid),
+                        '&amp;', ('state', '=', 'department_approved'), ('employee_id.user_id', '!=', uid)]"/>
+                <separator/>
+                <filter string="Date" name="date" date="date_start"/>
+                <group expand="0" string="Group By">
+                    <filter string="Employee" name="employee" context="{'group_by': 'employee_id'}"/>
+                    <filter string="Department" name="department" context="{'group_by': 'department_id'}"/>
+                    <filter string="Status" name="status" context="{'group_by': 'state'}"/>
+                    <filter string="Start Date" name="date_start" context="{'group_by': 'date_start:month'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <!-- Timesheet Approval Calendar View -->
+    <record id="view_hr_timesheet_approval_calendar" model="ir.ui.view">
+        <field name="name">hr.timesheet.approval.calendar</field>
+        <field name="model">hr.timesheet.approval</field>
+        <field name="arch" type="xml">
+            <calendar string="Timesheet Approvals" date_start="date_start" date_stop="date_end" mode="month" color="employee_id">
+                <field name="name"/>
+                <field name="employee_id"/>
+                <field name="total_hours" widget="float_time"/>
+                <field name="state"/>
+            </calendar>
+        </field>
+    </record>
+
+    <!-- Timesheet Approval Pivot View -->
+    <record id="view_hr_timesheet_approval_pivot" model="ir.ui.view">
+        <field name="name">hr.timesheet.approval.pivot</field>
+        <field name="model">hr.timesheet.approval</field>
+        <field name="arch" type="xml">
+            <pivot string="Timesheet Approvals Analysis" display_quantity="true">
+                <field name="employee_id" type="row"/>
+                <field name="date_start" type="col" interval="month"/>
+                <field name="total_hours" type="measure"/>
+                <field name="overtime_hours" type="measure"/>
+            </pivot>
+        </field>
+    </record>
+
+    <!-- Timesheet Approval Actions -->
+    <record id="action_hr_timesheet_approval" model="ir.actions.act_window">
+        <field name="name">Timesheet Approvals</field>
+        <field name="type">ir.actions.act_window</field>
+        <field name="res_model">hr.timesheet.approval</field>
+        <field name="view_mode">tree,form,calendar,pivot</field>
+        <field name="search_view_id" ref="view_hr_timesheet_approval_search"/>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                Create a new timesheet approval request
+            </p>
+            <p>
+                Submit your timesheets for approval by your manager, department head, and HR.
+            </p>
+        </field>
+    </record>
+
+    <!-- My Timesheet Approvals Action -->
+    <record id="action_my_timesheet_approval" model="ir.actions.act_window">
+        <field name="name">My Timesheet Approvals</field>
+        <field name="type">ir.actions.act_window</field>
+        <field name="res_model">hr.timesheet.approval</field>
+        <field name="view_mode">tree,form,calendar</field>
+        <field name="search_view_id" ref="view_hr_timesheet_approval_search"/>
+        <field name="domain">[('employee_id.user_id', '=', uid)]</field>
+        <field name="context">{'search_default_my_timesheets': 1}</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                Create a new timesheet approval request
+            </p>
+            <p>
+                Track and submit your timesheets for approval.
+            </p>
+        </field>
+    </record>
+
+    <!-- Timesheet Approvals to Review Action -->
+    <record id="action_timesheet_approvals_to_review" model="ir.actions.act_window">
+        <field name="name">Timesheets to Review</field>
+        <field name="type">ir.actions.act_window</field>
+        <field name="res_model">hr.timesheet.approval</field>
+        <field name="view_mode">tree,form,calendar</field>
+        <field name="search_view_id" ref="view_hr_timesheet_approval_search"/>
+        <field name="domain">['|',
+                              '&amp;', ('state', '=', 'submitted'), ('manager_id', '=', uid),
+                              '|',
+                              '&amp;', ('state', '=', 'manager_approved'), ('department_head_id', '=', uid),
+                              '&amp;', ('state', '=', 'department_approved'), ('employee_id.user_id', '!=', uid)]</field>
+        <field name="context">{'search_default_to_approve': 1}</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                No timesheets to review
+            </p>
+            <p>
+                All timesheets have been reviewed.
+            </p>
+        </field>
+    </record>
+
+    <!-- Menu Items -->
+    <menuitem id="menu_timesheet_approval_root" name="Timesheet Approvals" parent="hr_timesheet.menu_hr_time_tracking" sequence="5"/>
+
+    <menuitem id="menu_my_timesheet_approvals" name="My Timesheet Approvals"
+              parent="menu_timesheet_approval_root"
+              action="action_my_timesheet_approval"
+              sequence="10"/>
+
+    <menuitem id="menu_timesheet_approvals_to_review" name="Timesheets to Review"
+              parent="menu_timesheet_approval_root"
+              action="action_timesheet_approvals_to_review"
+              sequence="20"/>
+
+    <menuitem id="menu_all_timesheet_approvals" name="All Timesheet Approvals"
+              parent="menu_timesheet_approval_root"
+              action="action_hr_timesheet_approval"
+              sequence="30" groups="hr.group_hr_manager"/>
+</odoo>
