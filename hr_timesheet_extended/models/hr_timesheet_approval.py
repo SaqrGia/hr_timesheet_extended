@@ -94,6 +94,50 @@ class HrTimesheetApproval(models.Model):
             vals['name'] = self.env['ir.sequence'].next_by_code('hr.timesheet.approval') or _('New')
         return super(HrTimesheetApproval, self).create(vals)
 
+    def _send_notification(self, user, title, message):
+        """Send a notification to the specified user"""
+        # Create a notification with more details
+        notification_values = {
+            'model': self._name,
+            'res_id': self.id,
+            'message_type': 'notification',
+            'subtype_id': self.env.ref('mail.mt_comment').id,
+            'body': message,
+            'subject': title,
+            'partner_ids': [(4, user.partner_id.id)],
+            'author_id': self.env.user.partner_id.id,
+            'email_from': self.env.user.email_formatted,
+            'reply_to': self.env.user.email_formatted,
+            'record_name': self.name,
+        }
+        
+        # Create the notification
+        self.env['mail.message'].create(notification_values)
+        
+        # Also send a bus notification for real-time updates
+        self.env['bus.bus']._sendone(
+            user.partner_id,
+            'notification',
+            {
+                'title': title,
+                'message': message,
+                'type': 'info',
+                'sticky': True,
+                'message_id': self.id,
+                'model': self._name,
+            }
+        )
+
+        # Create scheduled activity
+        activity_type = self.env.ref('hr_timesheet_extended.mail_activity_data_timesheet_approval')
+        self.activity_schedule(
+            activity_type_id=activity_type.id,
+            user_id=user.id,
+            note=message,
+            summary=title,
+            date_deadline=fields.Date.today() + timedelta(days=2)  # Due in 2 days
+        )
+
     def action_submit(self):
         for approval in self:
             if approval.state != 'draft':
@@ -114,9 +158,18 @@ class HrTimesheetApproval(models.Model):
                 'submitted_date': fields.Datetime.now(),
             })
 
-            # Create activity for the manager
+            # Send notification to manager
             if approval.manager_id:
-                approval._create_approval_activity(approval.manager_id.partner_id, 'manager_approval')
+                approval._send_notification(
+                    approval.manager_id,
+                    _('Timesheet Approval Needed'),
+                    _('Please review and approve the timesheet submitted by %s\nPeriod: %s to %s\nTotal Hours: %s') % (
+                        approval.employee_id.name,
+                        approval.date_start,
+                        approval.date_end,
+                        approval.total_hours
+                    )
+                )
             else:
                 raise UserError(
                     _("Cannot submit for approval: No manager defined for employee %s.") % approval.employee_id.name)
@@ -142,9 +195,26 @@ class HrTimesheetApproval(models.Model):
                 'manager_approval_date': fields.Datetime.now(),
             })
 
-            # Create activity for the department head
+            # Mark manager's activity as done
+            activities = self.env['mail.activity'].search([
+                ('res_id', '=', approval.id),
+                ('res_model', '=', self._name),
+                ('user_id', '=', approval.manager_id.id),
+            ])
+            activities.action_done()
+
+            # Send notification to department head
             if approval.department_head_id:
-                approval._create_approval_activity(approval.department_head_id.partner_id, 'department_approval')
+                approval._send_notification(
+                    approval.department_head_id,
+                    _('Department Approval Needed for Timesheet'),
+                    _('Please review and approve the timesheet of %s after manager approval\nPeriod: %s to %s\nTotal Hours: %s') % (
+                        approval.employee_id.name,
+                        approval.date_start,
+                        approval.date_end,
+                        approval.total_hours
+                    )
+                )
             else:
                 raise UserError(_("Cannot proceed with approval: No department head defined."))
 
@@ -169,14 +239,31 @@ class HrTimesheetApproval(models.Model):
                 'department_approval_date': fields.Datetime.now(),
             })
 
-            # Get HR managers and create activity
+            # Mark department head's activity as done
+            activities = self.env['mail.activity'].search([
+                ('res_id', '=', approval.id),
+                ('res_model', '=', self._name),
+                ('user_id', '=', approval.department_head_id.id),
+            ])
+            activities.action_done()
+
+            # Get HR managers and send notifications
             hr_managers = self.env['res.users'].search([
                 ('groups_id', 'in', self.env.ref('hr.group_hr_manager').id)
             ])
 
             if hr_managers:
                 for hr_manager in hr_managers:
-                    approval._create_approval_activity(hr_manager.partner_id, 'hr_approval')
+                    approval._send_notification(
+                        hr_manager,
+                        _('HR Final Approval Needed for Timesheet'),
+                        _('Please review and give final approval for the timesheet of %s\nPeriod: %s to %s\nTotal Hours: %s') % (
+                            approval.employee_id.name,
+                            approval.date_start,
+                            approval.date_end,
+                            approval.total_hours
+                        )
+                    )
             else:
                 raise UserError(_("Cannot proceed with approval: No HR manager found in the system."))
 
@@ -203,8 +290,25 @@ class HrTimesheetApproval(models.Model):
                 'hr_manager_id': self.env.user.id,
             })
 
-            # Complete any pending activities
-            approval._mark_activities_done()
+            # Mark HR manager's activity as done
+            activities = self.env['mail.activity'].search([
+                ('res_id', '=', approval.id),
+                ('res_model', '=', self._name),
+                ('user_id', '=', self.env.user.id),
+            ])
+            activities.action_done()
+
+            # Send notification to employee
+            if approval.employee_id.user_id:
+                approval._send_notification(
+                    approval.employee_id.user_id,
+                    _('Timesheet Approved'),
+                    _('Your timesheet has been approved by HR\nPeriod: %s to %s\nTotal Hours: %s') % (
+                        approval.date_start,
+                        approval.date_end,
+                        approval.total_hours
+                    )
+                )
 
     def action_reject(self, reason=None):
         for approval in self:
@@ -227,12 +331,25 @@ class HrTimesheetApproval(models.Model):
                 'rejected_by': self.env.user.id,
             })
 
-            # Create activity to notify the employee about the rejection
-            if approval.employee_id.user_id:
-                approval._create_rejection_activity(approval.employee_id.user_id.partner_id, reason)
+            # Mark current approver's activity as done
+            activities = self.env['mail.activity'].search([
+                ('res_id', '=', approval.id),
+                ('res_model', '=', self._name),
+                ('user_id', '=', self.env.user.id),
+            ])
+            activities.action_done()
 
-            # Cancel any pending activities
-            approval._cancel_pending_activities()
+            # Send notification to employee about rejection
+            if approval.employee_id.user_id:
+                approval._send_notification(
+                    approval.employee_id.user_id,
+                    _('Timesheet Rejected'),
+                    _('Your timesheet has been rejected\nPeriod: %s to %s\nReason: %s') % (
+                        approval.date_start,
+                        approval.date_end,
+                        reason or _('No reason provided')
+                    )
+                )
 
     def action_reset_to_draft(self):
         for approval in self:
@@ -265,58 +382,6 @@ class HrTimesheetApproval(models.Model):
 
             # Cancel any pending activities
             approval._cancel_pending_activities()
-
-    def _create_approval_activity(self, partner, activity_type):
-        """Create an activity for the approval process"""
-        activity_type_id = self.env.ref('mail.mail_activity_data_todo').id
-        summary = ''
-        note = ''
-
-        if activity_type == 'manager_approval':
-            summary = _('Timesheet Approval Needed')
-            note = _('Please review and approve the timesheet submitted by %s') % self.employee_id.name
-        elif activity_type == 'department_approval':
-            summary = _('Department Approval Needed for Timesheet')
-            note = _('Please review and approve the timesheet of %s after manager approval') % self.employee_id.name
-        elif activity_type == 'hr_approval':
-            summary = _('HR Final Approval Needed for Timesheet')
-            note = _('Please review and give final approval for the timesheet of %s') % self.employee_id.name
-
-        # Create the activity
-        self.env['mail.activity'].create({
-            'activity_type_id': activity_type_id,
-            'summary': summary,
-            'note': note,
-            'res_id': self.id,
-            'res_model_id': self.env.ref('hr_timesheet_extended.model_hr_timesheet_approval').id,
-            'user_id': partner.user_ids[0].id if partner.user_ids else False,
-            'date_deadline': fields.Date.today() + timedelta(days=2),  # Due in 2 days
-        })
-
-    def _create_rejection_activity(self, partner, reason):
-        """Create an activity to notify about rejection"""
-        activity_type_id = self.env.ref('mail.mail_activity_data_todo').id
-        summary = _('Timesheet Rejected')
-        note = _('Your timesheet has been rejected. Reason: %s') % (reason or _('No reason provided'))
-
-        self.env['mail.activity'].create({
-            'activity_type_id': activity_type_id,
-            'summary': summary,
-            'note': note,
-            'res_id': self.id,
-            'res_model_id': self.env.ref('hr_timesheet_extended.model_hr_timesheet_approval').id,
-            'user_id': partner.user_ids[0].id if partner.user_ids else False,
-            'date_deadline': fields.Date.today() + timedelta(days=1),  # Due in 1 day
-        })
-
-    def _mark_activities_done(self):
-        """Mark all activities related to this timesheet as done"""
-        activities = self.env['mail.activity'].search([
-            ('res_id', '=', self.id),
-            ('res_model_id', '=', self.env.ref('hr_timesheet_extended.model_hr_timesheet_approval').id),
-        ])
-        for activity in activities:
-            activity.action_done()
 
     def _cancel_pending_activities(self):
         """Cancel all pending activities related to this timesheet"""

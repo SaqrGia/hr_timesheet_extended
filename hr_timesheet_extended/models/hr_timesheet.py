@@ -47,57 +47,52 @@ class AccountAnalyticLine(models.Model):
     timesheet_approval_id = fields.Many2one('hr.timesheet.approval', string='Timesheet Approval')
 
     def action_create_timesheet_approval(self):
-        self.ensure_one()
+        """
+        Create a timesheet approval request for the selected records
+        """
+        # This function is called from a button, it does not need ensure_one()
+        if not self:
+            raise UserError(_("No time records selected"))
 
-        # تحديد تاريخ البداية والنهاية من الأسبوع الحالي
-        today = fields.Date.context_today(self)
-        # اليوم الأول من الأسبوع (الإثنين)
-        first_day = today - timedelta(days=today.weekday())
-        # اليوم الأخير من الأسبوع (الأحد)
-        last_day = first_day + timedelta(days=6)
+        # Get the employee from the first record
+        employee = self[0].employee_id
+        if not employee:
+            raise UserError(_("Could not determine the employee to create the approval"))
 
-        # البحث عن جميع سجلات الجدول الزمني للموظف في هذا الأسبوع
-        timesheet_lines = self.search([
-            ('employee_id', '=', self.employee_id.id),
-            ('date', '>=', first_day),
-            ('date', '<=', last_day),
-            ('project_id', '!=', False)
-        ])
+        # Determine the date range for all records
+        date_start = min(self.mapped('date'))
+        date_end = max(self.mapped('date'))
 
-        # التحقق من عدم وجود طلب موافقة سابق لنفس الفترة
+        # Check if an approval request already exists for this employee and period
         existing_approval = self.env['hr.timesheet.approval'].search([
-            ('employee_id', '=', self.employee_id.id),
-            ('date_start', '=', first_day),
-            ('date_end', '=', last_day),
-            ('state', '!=', 'rejected')
+            ('employee_id', '=', employee.id),
+            ('date_start', '=', date_start),
+            ('date_end', '=', date_end)
         ], limit=1)
 
         if existing_approval:
-            raise UserError(_("يوجد بالفعل طلب موافقة للفترة من %s إلى %s") % (first_day, last_day))
+            raise UserError(_("An approval request already exists for the period from %s to %s") %
+                            (date_start, date_end))
 
-        # التحقق من وجود سجلات جدول زمني
-        if not timesheet_lines:
-            raise UserError(_("لا توجد سجلات جدول زمني في الفترة من %s إلى %s") % (first_day, last_day))
-
-        # إنشاء سجل موافقة جديد
+        # Create an approval request
         approval_vals = {
-            'employee_id': self.employee_id.id,
-            'date_start': first_day,
-            'date_end': last_day,
-            'timesheet_line_ids': [(6, 0, timesheet_lines.ids)],
+            'employee_id': employee.id,
+            'date_start': date_start,
+            'date_end': date_end,
+            'timesheet_line_ids': [(6, 0, self.ids)],
             'state': 'draft',
         }
 
         timesheet_approval = self.env['hr.timesheet.approval'].create(approval_vals)
 
-        # تحديث سجلات الجدول الزمني لربطها بطلب الموافقة
-        timesheet_lines.write({
+        # Update the time records to link them with the request
+        self.write({
             'timesheet_approval_id': timesheet_approval.id
         })
 
-        # عرض سجل الموافقة الجديد
+        # Show the new approval request
         return {
-            'name': _('طلب موافقة جدول زمني'),
+            'name': _('Timesheet Approval Request'),
             'type': 'ir.actions.act_window',
             'res_model': 'hr.timesheet.approval',
             'res_id': timesheet_approval.id,
@@ -166,9 +161,13 @@ class AccountAnalyticLine(models.Model):
                 'submitted_date': fields.Datetime.now(),
             })
 
-            # Create activity for the manager
+            # Create notification for the manager
             if line.manager_id:
-                self._create_approval_activity(line.manager_id.partner_id, 'manager_approval')
+                line.message_post(
+                    body=_('Timesheet submitted for your approval'),
+                    message_type='notification',
+                    partner_ids=[line.manager_id.partner_id.id]
+                )
             else:
                 raise UserError(
                     _("Cannot submit for approval: No manager defined for employee %s.") % line.employee_id.name)
@@ -188,9 +187,13 @@ class AccountAnalyticLine(models.Model):
                 'manager_approval_date': fields.Datetime.now(),
             })
 
-            # Create activity for the department head
+            # Create notification for the department head
             if line.department_head_id:
-                self._create_approval_activity(line.department_head_id.partner_id, 'department_approval')
+                line.message_post(
+                    body=_('Timesheet approved by manager, awaiting department head approval'),
+                    message_type='notification',
+                    partner_ids=[line.department_head_id.partner_id.id]
+                )
             else:
                 raise UserError(_("Cannot proceed with approval: No department head defined."))
 
@@ -209,14 +212,17 @@ class AccountAnalyticLine(models.Model):
                 'department_approval_date': fields.Datetime.now(),
             })
 
-            # Get HR managers and create activity
+            # Get HR managers and create notification
             hr_managers = self.env['res.users'].search([
                 ('groups_id', 'in', self.env.ref('hr.group_hr_manager').id)
             ])
 
             if hr_managers:
-                for hr_manager in hr_managers:
-                    self._create_approval_activity(hr_manager.partner_id, 'hr_approval')
+                line.message_post(
+                    body=_('Timesheet approved by department head, awaiting HR approval'),
+                    message_type='notification',
+                    partner_ids=[manager.partner_id.id for manager in hr_managers]
+                )
             else:
                 raise UserError(_("Cannot proceed with approval: No HR manager found in the system."))
 
@@ -236,8 +242,13 @@ class AccountAnalyticLine(models.Model):
                 'hr_manager_id': self.env.user.id,
             })
 
-            # Complete any pending activities
-            self._mark_activities_done()
+            # Create notification for the employee
+            if line.employee_id.user_id:
+                line.message_post(
+                    body=_('Your timesheet has been approved by HR'),
+                    message_type='notification',
+                    partner_ids=[line.employee_id.user_id.partner_id.id]
+                )
 
     def action_reject(self, reason=None):
         for line in self:
@@ -252,12 +263,13 @@ class AccountAnalyticLine(models.Model):
                 'rejected_by': self.env.user.id,
             })
 
-            # Create activity to notify the employee about the rejection
+            # Create notification for the employee about the rejection
             if line.employee_id.user_id:
-                self._create_rejection_activity(line.employee_id.user_id.partner_id, reason)
-
-            # Cancel any pending activities
-            self._cancel_pending_activities()
+                line.message_post(
+                    body=_('Your timesheet has been rejected. Reason: %s') % (reason or _('No reason provided')),
+                    message_type='notification',
+                    partner_ids=[line.employee_id.user_id.partner_id.id]
+                )
 
     def action_reset_to_draft(self):
         for line in self:
@@ -342,40 +354,36 @@ class AccountAnalyticLine(models.Model):
 
     # Allow for batch approval actions from the grid view
     @api.model
-    def action_submit_selected(self, ids):
+    def action_submit_selected(self):
         """Submit multiple timesheets for approval"""
-        records = self.browse(ids)
-        for record in records:
+        for record in self:
             if record.state == 'draft':
                 record.action_submit()
         return True
 
     @api.model
-    def action_manager_approve_selected(self, ids):
+    def action_manager_approve_selected(self):
         """Manager approve multiple timesheets"""
-        records = self.browse(ids)
-        for record in records:
+        for record in self:
             if record.state == 'submitted' and self.env.user == record.manager_id:
                 record.action_manager_approve()
         return True
 
     @api.model
-    def action_department_approve_selected(self, ids):
+    def action_department_approve_selected(self):
         """Department head approve multiple timesheets"""
-        records = self.browse(ids)
-        for record in records:
+        for record in self:
             if record.state == 'manager_approved' and self.env.user == record.department_head_id:
                 record.action_department_approve()
         return True
 
     @api.model
-    def action_hr_approve_selected(self, ids):
+    def action_hr_approve_selected(self):
         """HR approve multiple timesheets"""
-        records = self.browse(ids)
         if not self.env.user.has_group('hr.group_hr_manager'):
             raise UserError(_("Only HR managers can perform the final approval."))
 
-        for record in records:
+        for record in self:
             if record.state == 'department_approved':
                 record.action_hr_approve()
         return True

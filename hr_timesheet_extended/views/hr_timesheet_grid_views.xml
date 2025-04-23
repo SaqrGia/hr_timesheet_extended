@@ -1,6 +1,73 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
-    <!-- Crear una acción para timesheets que necesitan validación -->
+    <!-- Grid View للموظف -->
+    <record id="view_timesheet_grid_employee" model="ir.ui.view">
+        <field name="name">account.analytic.line.grid.employee</field>
+        <field name="model">account.analytic.line</field>
+        <field name="arch" type="xml">
+            <grid string="Timesheets" create_inline="1"  barchart_total="1" js_class="timer_timesheet_grid">
+                <field name="project_id" type="row"/>
+                <field name="task_id" type="row"/>
+                <field name="date" type="col">
+                    <range name="week" string="Week" span="week" step="day"/>
+                    <range name="month" string="Month" span="month" step="day"/>
+                    <range name="year" string="Year" span="year" step="month"/>
+                </field>
+                <field name="unit_amount" type="measure" widget="float_time"/>
+                <button type="object" class="btn-primary" name="action_create_timesheet_approval" string="Create Approval" data-hotkey="a"/>
+            </grid>
+        </field>
+    </record>
+
+    <!-- Validation Grid View للموظف -->
+    <record id="view_timesheet_grid_employee_validation" model="ir.ui.view">
+        <field name="name">account.analytic.line.grid.employee.validation</field>
+        <field name="model">account.analytic.line</field>
+        <field name="inherit_id" ref="view_timesheet_grid_employee"/>
+        <field name="mode">primary</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml">
+            <grid position="attributes">
+<!--                <attribute name="create">0</attribute>-->
+<!--                <attribute name="edit">0</attribute>-->
+                <attribute name="string">Timesheets to Validate</attribute>
+                <attribute name="js_class">timer_timesheet_grid</attribute>>
+            </grid>
+            <!-- إضافة زر إضافي للموافقة الجماعية -->
+            <button name="action_create_timesheet_approval" position="after">
+                <button string="Submit Selected" name="action_submit_selected" type="object"/>
+                <button string="Approve as Manager" name="action_manager_approve_selected" type="object" />
+                <button string="Approve as Department" name="action_department_approve_selected" type="object" />
+                <button string="Approve as HR" name="action_hr_approve_selected" type="object" />
+            </button>
+        </field>
+    </record>
+
+    <!-- الإجراء لعرض واجهة grid للموظف -->
+    <record id="action_timesheet_grid_employee" model="ir.actions.act_window">
+        <field name="name">My Timesheets</field>
+        <field name="res_model">account.analytic.line</field>
+        <field name="view_mode">grid,tree,form,pivot,graph</field>
+        <field name="domain">[('project_id', '!=', False), ('user_id', '=', uid)]</field>
+        <field name="context">{
+            'grid_anchor': context_today().strftime('%Y-%m-%d'),
+            'grid_range': 'week',
+            'default_employee_id': [('user_id', '=', uid)],
+            'search_default_my_timesheet': 1,
+            'default_is_timesheet': 1
+        }</field>
+        <field name="search_view_id" ref="hr_timesheet.hr_timesheet_line_my_timesheet_search"/>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                No activities found. Let's start a new one!
+            </p>
+            <p>
+                Track your working hours by projects every day and submit for approval.
+            </p>
+        </field>
+    </record>
+
+    <!-- الإجراء لعرض واجهة grid للموافقات -->
     <record id="action_timesheet_to_validate" model="ir.actions.act_window">
         <field name="name">To Validate</field>
         <field name="res_model">account.analytic.line</field>
@@ -19,6 +86,7 @@
             'default_employee_id': [('user_id', '=', uid)],
             'show_approval_buttons': 1
         }</field>
+        <field name="search_view_id" ref="hr_timesheet.hr_timesheet_line_search"/>
         <field name="help" type="html">
             <p class="o_view_nocontent_smiling_face">
                 No timesheet to validate
@@ -29,7 +97,15 @@
         </field>
     </record>
 
-    <!-- Menú para validar timesheets -->
+    <!-- View for timesheet to validate -->
+    <record id="view_timesheet_grid_employee_to_validate" model="ir.actions.act_window.view">
+        <field name="sequence">1</field>
+        <field name="view_mode">grid</field>
+        <field name="view_id" ref="view_timesheet_grid_employee_validation"/>
+        <field name="act_window_id" ref="action_timesheet_to_validate"/>
+    </record>
+
+    <!-- إضافة القوائم للوصول للواجهات -->
     <menuitem id="menu_timesheet_to_validate"
         name="To Validate"
         parent="hr_timesheet.menu_hr_time_tracking"
