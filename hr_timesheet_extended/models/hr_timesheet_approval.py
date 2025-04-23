@@ -62,6 +62,31 @@ class HrTimesheetApproval(models.Model):
     department_head_signature = fields.Binary(string='Department Head Signature')
     hr_signature = fields.Binary(string='HR Signature')
 
+    # New method to open grid view
+    def action_view_timesheet_grid(self):
+        """
+        Method to open the grid view for the timesheet lines related to this approval request
+        """
+        self.ensure_one()
+
+        # Check if there are any timesheet lines
+        if not self.timesheet_line_ids:
+            raise UserError(_("No timesheet records are associated with this approval request."))
+
+        # Return action to open grid view
+        return {
+            'name': _('Timesheet Grid View'),
+            'type': 'ir.actions.act_window',
+            'res_model': 'account.analytic.line',
+            'view_mode': 'grid,tree,form',
+            'domain': [('timesheet_approval_id', '=', self.id)],
+            'context': {
+                'grid_anchor': fields.Date.today().strftime('%Y-%m-%d'),
+                'grid_range': 'week',
+                'search_default_groupby_project': True
+            },
+        }
+
     @api.depends('timesheet_line_ids.unit_amount')
     def _compute_total_hours(self):
         for approval in self:
@@ -110,10 +135,10 @@ class HrTimesheetApproval(models.Model):
             'reply_to': self.env.user.email_formatted,
             'record_name': self.name,
         }
-        
+
         # Create the notification
         self.env['mail.message'].create(notification_values)
-        
+
         # Also send a bus notification for real-time updates
         self.env['bus.bus']._sendone(
             user.partner_id,

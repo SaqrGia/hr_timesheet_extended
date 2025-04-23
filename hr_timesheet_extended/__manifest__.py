@@ -23,6 +23,7 @@ This module extends the standard HR Timesheet functionality with:
         'mail',
         'project',
         'timesheet_grid',
+        'web',
     ],
     'data': [
         'security/hr_timesheet_security.xml',

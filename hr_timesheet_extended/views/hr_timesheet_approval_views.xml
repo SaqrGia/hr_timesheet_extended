@@ -1,5 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
+    <!-- Action for Grid View from Approval Form -->
+    <record id="action_view_timesheet_grid_from_approval" model="ir.actions.act_window">
+        <field name="name">Grid View</field>
+        <field name="type">ir.actions.act_window</field>
+        <field name="res_model">account.analytic.line</field>
+        <field name="view_mode">grid,tree,form</field>
+        <field name="domain">[('timesheet_approval_id', '=', active_id)]</field>
+        <field name="context">{
+            'grid_anchor': context_today().strftime('%Y-%m-%d'),
+            'grid_range': 'week',
+            'search_default_groupby_project': True
+        }</field>
+        <field name="view_id" ref="hr_timesheet_extended.view_timesheet_grid_employee"/>
+    </record>
+
     <!-- Timesheet Approval Form View -->
     <record id="view_hr_timesheet_approval_form" model="ir.ui.view">
         <field name="name">hr.timesheet.approval.form</field>
@@ -26,6 +41,14 @@
                     <field name="state" widget="statusbar" statusbar_visible="draft,submitted,manager_approved,department_approved,hr_approved"/>
                 </header>
                 <sheet>
+                    <div class="oe_button_box" name="button_box">
+                        <button name="%(action_view_timesheet_grid_from_approval)d" type="action"
+                                class="oe_stat_button" icon="fa-th">
+                            <div class="o_field_widget o_stat_info">
+                                <span class="o_stat_text">Grid View</span>
+                            </div>
+                        </button>
+                    </div>
                     <div class="oe_title">
                         <h1>
                             <field name="name" readonly="1"/>

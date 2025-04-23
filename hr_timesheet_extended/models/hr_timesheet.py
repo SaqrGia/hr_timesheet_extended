@@ -48,7 +48,8 @@ class AccountAnalyticLine(models.Model):
 
     def action_create_timesheet_approval(self):
         """
-        Create a timesheet approval request for the selected records
+        Create a timesheet approval request for the selected records.
+        Always uses the exact grid view date range.
         """
         # This function is called from a button, it does not need ensure_one()
         if not self:
@@ -59,9 +60,56 @@ class AccountAnalyticLine(models.Model):
         if not employee:
             raise UserError(_("Could not determine the employee to create the approval"))
 
-        # Determine the date range for all records
-        date_start = min(self.mapped('date'))
-        date_end = max(self.mapped('date'))
+        # Get the grid view date range
+        grid_range = self.env.context.get('grid_range', 'week')  # Default to week if not specified
+        grid_anchor = self.env.context.get('grid_anchor')
+
+        # If grid_anchor is not provided, use current date
+        if not grid_anchor:
+            grid_anchor = fields.Date.today()
+        elif isinstance(grid_anchor, str):
+            grid_anchor = fields.Date.from_string(grid_anchor)
+
+        # Calculate date_start and date_end based on grid_range using Odoo's logic
+        if grid_range == 'week':
+            # This uses Odoo's logic for determining the start/end of week
+            # First day is the anchor's week's Sunday, last day is Saturday
+            # Adjust weekday calculation: 0 is Monday in Python, but Odoo may be using Sunday as first day
+            weekday = grid_anchor.weekday()
+            # If anchor is Sunday (weekday=6), start date is the anchor itself
+            # Otherwise, go back to previous Sunday
+            if weekday == 6:  # Sunday
+                date_start = grid_anchor
+            else:
+                # Go back to previous Sunday (weekday + 1 days ago)
+                date_start = grid_anchor - timedelta(days=weekday + 1)
+            # End date is 6 days after start date (Saturday)
+            date_end = date_start + timedelta(days=6)
+        elif grid_range == 'month':
+            # First day of the month
+            date_start = grid_anchor.replace(day=1)
+            # Last day of the month
+            if grid_anchor.month == 12:
+                date_end = grid_anchor.replace(year=grid_anchor.year + 1, month=1, day=1) - timedelta(days=1)
+            else:
+                date_end = grid_anchor.replace(month=grid_anchor.month + 1, day=1) - timedelta(days=1)
+        elif grid_range == 'year':
+            # First day of the year
+            date_start = grid_anchor.replace(month=1, day=1)
+            # Last day of the year
+            date_end = grid_anchor.replace(year=grid_anchor.year + 1, month=1, day=1) - timedelta(days=1)
+        else:
+            # Fallback to day view
+            date_start = grid_anchor
+            date_end = grid_anchor
+
+        # Double-check with actual grid columns if available in context
+        if self.env.context.get('grid_dates'):
+            # Use the exact dates from grid view if available
+            grid_dates = self.env.context.get('grid_dates')
+            if grid_dates and len(grid_dates) > 0:
+                date_start = min(grid_dates)
+                date_end = max(grid_dates)
 
         # Check if an approval request already exists for this employee and period
         existing_approval = self.env['hr.timesheet.approval'].search([
@@ -99,7 +147,6 @@ class AccountAnalyticLine(models.Model):
             'view_mode': 'form',
             'target': 'current',
         }
-
     @api.model
     def create_weekly_approval_wizard(self):
         """عرض معالج إنشاء طلب موافقة أسبوعي"""
