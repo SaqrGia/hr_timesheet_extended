@@ -11,7 +11,8 @@
             'grid_anchor': context_today().strftime('%Y-%m-%d'),
             'grid_range': 'week',
             'search_default_groupby_project': True
-        }</field>
+            }
+        </field>
         <field name="view_id" ref="hr_timesheet_extended.view_timesheet_grid_employee"/>
     </record>
 
@@ -38,7 +39,8 @@
                             invisible="state in ['draft', 'hr_approved', 'rejected']"/>
                     <button name="action_reset_to_draft" string="Reset to Draft" type="object"
                             invisible="state in ['draft', 'hr_approved']"/>
-                    <field name="state" widget="statusbar" statusbar_visible="draft,submitted,manager_approved,department_approved,hr_approved"/>
+                    <field name="state" widget="statusbar"
+                           statusbar_visible="draft,submitted,manager_approved,department_approved,hr_approved"/>
                 </header>
                 <sheet>
                     <div class="oe_button_box" name="button_box">
@@ -57,8 +59,12 @@
                     <div class="alert alert-danger" role="alert"
                          invisible="state != 'rejected'">
                         <field name="rejection_reason" readonly="1"/>
-                        <div>Rejected by: <field name="rejected_by" readonly="1" nolabel="1"/></div>
-                        <div>Date: <field name="rejection_date" readonly="1" nolabel="1"/></div>
+                        <div>Rejected by:
+                            <field name="rejected_by" readonly="1" nolabel="1"/>
+                        </div>
+                        <div>Date:
+                            <field name="rejection_date" readonly="1" nolabel="1"/>
+                        </div>
                     </div>
                     <group>
                         <group>
@@ -101,8 +107,10 @@
                             <group>
                                 <group string="Approval Dates" invisible="state == 'draft'">
                                     <field name="submitted_date" readonly="1" invisible="submitted_date == False"/>
-                                    <field name="manager_approval_date" readonly="1" invisible="manager_approval_date == False"/>
-                                    <field name="department_approval_date" readonly="1" invisible="department_approval_date == False"/>
+                                    <field name="manager_approval_date" readonly="1"
+                                           invisible="manager_approval_date == False"/>
+                                    <field name="department_approval_date" readonly="1"
+                                           invisible="department_approval_date == False"/>
                                     <field name="hr_approval_date" readonly="1" invisible="hr_approval_date == False"/>
                                 </group>
                                 <group string="HR Approval">
@@ -119,15 +127,21 @@
                                         <table class="table table-bordered">
                                             <tr class="bg-primary">
                                                 <th>Total</th>
-                                                <th class="text-right"><field name="total_hours" widget="float_time" nolabel="1"/></th>
+                                                <th class="text-right">
+                                                    <field name="total_hours" widget="float_time" nolabel="1"/>
+                                                </th>
                                             </tr>
                                             <tr>
                                                 <td>Minimum Work Hours</td>
-                                                <td class="text-right"><field name="minimum_hours" widget="float_time" nolabel="1"/></td>
+                                                <td class="text-right">
+                                                    <field name="minimum_hours" widget="float_time" nolabel="1"/>
+                                                </td>
                                             </tr>
                                             <tr>
                                                 <td>Overtime Hours</td>
-                                                <td class="text-right"><field name="overtime_hours" widget="float_time" nolabel="1"/></td>
+                                                <td class="text-right">
+                                                    <field name="overtime_hours" widget="float_time" nolabel="1"/>
+                                                </td>
                                             </tr>
                                         </table>
                                     </div>
@@ -139,7 +153,8 @@
                                             <div class="col-6">
                                                 <div class="signature-box">
                                                     <label for="employee_signature">Employee</label>
-                                                    <field name="employee_signature" widget="signature" readonly="state != 'draft'"/>
+                                                    <field name="employee_signature" widget="signature"
+                                                           readonly="state != 'draft'"/>
                                                 </div>
                                             </div>
                                             <div class="col-6">
@@ -170,6 +185,31 @@
                                 </div>
                             </div>
                         </page>
+                        <page string="Payroll Information" name="payroll_information">
+                            <attribute name="invisible" eval="not payroll_processed"/>
+                            <group>
+                                <group string="Payroll Status">
+                                    <field name="payroll_processed"/>
+                                    <field name="work_entry_type_id" readonly="1"/>
+                                    <field name="payslip_id" readonly="1"/>
+                                    <field name="payroll_batch_id" readonly="1"/>
+                                </group>
+                                <group string="Actions" groups="hr_payroll.group_hr_payroll_manager">
+                                    <button name="%(action_hr_timesheet_to_payroll_wizard)d"
+                                            type="action"
+                                            string="Generate Payroll Entries"
+                                            class="btn btn-primary">
+                                        <attribute name="invisible" eval="state != 'hr_approved' or payroll_processed"/>
+                                    </button>
+                                    <button name="action_view_payslip"
+                                            type="object"
+                                            string="View Payslip"
+                                            class="btn btn-secondary">
+                                        <attribute name="invisible" eval="not payslip_id"/>
+                                    </button>
+                                </group>
+                            </group>
+                        </page>
                     </notebook>
                 </sheet>
                 <div class="oe_chatter">
@@ -191,6 +231,11 @@
                   decoration-warning="state in ['manager_approved', 'department_approved']"
                   decoration-success="state == 'hr_approved'"
                   decoration-danger="state == 'rejected'">
+                <header>
+                    <button name="%(action_hr_timesheet_to_payroll_wizard)d" type="action"
+                            string="Create Payroll Entries"
+                            groups="hr_payroll.group_hr_payroll_manager"/>
+                </header>
                 <field name="name"/>
                 <field name="employee_id"/>
                 <field name="department_id"/>
@@ -204,9 +249,12 @@
                        decoration-primary="state == 'submitted'"
                        decoration-warning="state in ['manager_approved', 'department_approved']"
                        decoration-danger="state == 'rejected'"/>
+                <field name="payroll_processed" invisible="1"/>
+                <field name="payslip_id" invisible="1"/>
             </tree>
         </field>
     </record>
+
 
     <!-- Timesheet Approval Search View -->
     <record id="view_hr_timesheet_approval_search" model="ir.ui.view">
@@ -223,8 +271,10 @@
                 <separator/>
                 <filter string="Draft" name="draft" domain="[('state', '=', 'draft')]"/>
                 <filter string="Submitted" name="submitted" domain="[('state', '=', 'submitted')]"/>
-                <filter string="Manager Approved" name="manager_approved" domain="[('state', '=', 'manager_approved')]"/>
-                <filter string="Department Approved" name="department_approved" domain="[('state', '=', 'department_approved')]"/>
+                <filter string="Manager Approved" name="manager_approved"
+                        domain="[('state', '=', 'manager_approved')]"/>
+                <filter string="Department Approved" name="department_approved"
+                        domain="[('state', '=', 'department_approved')]"/>
                 <filter string="HR Approved" name="hr_approved" domain="[('state', '=', 'hr_approved')]"/>
                 <filter string="Rejected" name="rejected" domain="[('state', '=', 'rejected')]"/>
                 <separator/>
@@ -241,11 +291,19 @@
                         '&amp;', ('state', '=', 'department_approved'), ('employee_id.user_id', '!=', uid)]"/>
                 <separator/>
                 <filter string="Date" name="date" date="date_start"/>
+                <separator/>
+                <filter string="Processed in Payroll" name="payroll_processed"
+                        domain="[('payroll_processed', '=', True)]"/>
+                <filter string="Not Processed in Payroll" name="not_payroll_processed"
+                        domain="[('payroll_processed', '=', False)]"/>
                 <group expand="0" string="Group By">
                     <filter string="Employee" name="employee" context="{'group_by': 'employee_id'}"/>
                     <filter string="Department" name="department" context="{'group_by': 'department_id'}"/>
                     <filter string="Status" name="status" context="{'group_by': 'state'}"/>
                     <filter string="Start Date" name="date_start" context="{'group_by': 'date_start:month'}"/>
+                    <filter string="Payroll Batch" name="payroll_batch" context="{'group_by': 'payroll_batch_id'}"/>
+                    <filter string="Work Entry Type" name="work_entry_type"
+                            context="{'group_by': 'work_entry_type_id'}"/>
                 </group>
             </search>
         </field>
@@ -256,7 +314,8 @@
         <field name="name">hr.timesheet.approval.calendar</field>
         <field name="model">hr.timesheet.approval</field>
         <field name="arch" type="xml">
-            <calendar string="Timesheet Approvals" date_start="date_start" date_stop="date_end" mode="month" color="employee_id">
+            <calendar string="Timesheet Approvals" date_start="date_start" date_stop="date_end" mode="month"
+                      color="employee_id">
                 <field name="name"/>
                 <field name="employee_id"/>
                 <field name="total_hours" widget="float_time"/>
@@ -323,10 +382,11 @@
         <field name="view_mode">tree,form,calendar</field>
         <field name="search_view_id" ref="view_hr_timesheet_approval_search"/>
         <field name="domain">['|',
-                              '&amp;', ('state', '=', 'submitted'), ('manager_id', '=', uid),
-                              '|',
-                              '&amp;', ('state', '=', 'manager_approved'), ('department_head_id', '=', uid),
-                              '&amp;', ('state', '=', 'department_approved'), ('employee_id.user_id', '!=', uid)]</field>
+            '&amp;', ('state', '=', 'submitted'), ('manager_id', '=', uid),
+            '|',
+            '&amp;', ('state', '=', 'manager_approved'), ('department_head_id', '=', uid),
+            '&amp;', ('state', '=', 'department_approved'), ('employee_id.user_id', '!=', uid)]
+        </field>
         <field name="context">{'search_default_to_approve': 1}</field>
         <field name="help" type="html">
             <p class="o_view_nocontent_smiling_face">
@@ -339,7 +399,8 @@
     </record>
 
     <!-- Menu Items -->
-    <menuitem id="menu_timesheet_approval_root" name="Timesheet Approvals" parent="hr_timesheet.menu_hr_time_tracking" sequence="5"/>
+    <menuitem id="menu_timesheet_approval_root" name="Timesheet Approvals" parent="hr_timesheet.menu_hr_time_tracking"
+              sequence="5"/>
 
     <menuitem id="menu_my_timesheet_approvals" name="My Timesheet Approvals"
               parent="menu_timesheet_approval_root"

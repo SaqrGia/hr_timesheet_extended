@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Form View for Timesheet to Payroll Wizard -->
+    <record id="view_hr_timesheet_to_payroll_wizard_form" model="ir.ui.view">
+        <field name="name">hr.timesheet.to.payroll.wizard.form</field>
+        <field name="model">hr.timesheet.to.payroll.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Generate Payroll Entries">
+                <sheet>
+                    <div class="alert alert-info" role="alert">
+                        This will generate work entries and payslips for the selected timesheet approvals.
+                    </div>
+
+                    <group>
+                        <group>
+                            <field name="employee_count" readonly="1"/>
+                            <field name="total_hours" widget="float_time" readonly="1"/>
+                        </group>
+                        <group>
+                            <field name="date_from"/>
+                            <field name="date_to"/>
+                        </group>
+                    </group>
+
+                    <group>
+                        <group>
+                            <field name="batch_name"/>
+                        </group>
+                        <group>
+                            <field name="payroll_structure_id" options="{'no_create': True}"/>
+                        </group>
+                    </group>
+
+                    <field name="timesheet_approval_ids">
+                        <tree>
+                            <field name="name"/>
+                            <field name="employee_id"/>
+                            <field name="department_id"/>
+                            <field name="date_start"/>
+                            <field name="date_end"/>
+                            <field name="total_hours" widget="float_time"/>
+                            <field name="overtime_hours" widget="float_time" sum="Total Overtime"/>
+                            <field name="state" widget="badge" decoration-success="state == 'hr_approved'"/>
+                        </tree>
+                    </field>
+                </sheet>
+                <footer>
+                    <button name="action_generate" string="Generate" type="object" class="btn-primary" data-hotkey="g"/>
+                    <button string="Cancel" class="btn-secondary" special="cancel" data-hotkey="z"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <!-- Action for Timesheet to Payroll Wizard -->
+    <record id="action_hr_timesheet_to_payroll_wizard" model="ir.actions.act_window">
+        <field name="name">Generate Payroll Entries</field>
+        <field name="res_model">hr.timesheet.to.payroll.wizard</field>
+        <field name="view_mode">form</field>
+        <field name="target">new</field>
+        <field name="binding_model_id" ref="model_hr_timesheet_approval"/>
+        <field name="binding_view_types">list</field>
+        <field name="context">{'search_default_state': 'hr_approved', 'search_default_not_payroll_processed': 1}</field>
+        <field name="groups_id" eval="[(4, ref('hr_payroll.group_hr_payroll_manager'))]"/>
+    </record>
+
+    <!-- Server Action for Generating Payroll Entries from Timesheets -->
+    <record id="action_server_generate_payroll_entries" model="ir.actions.server">
+        <field name="name">Generate Payroll Entries</field>
+        <field name="model_id" ref="model_hr_timesheet_approval"/>
+        <field name="binding_model_id" ref="model_hr_timesheet_approval"/>
+        <field name="binding_view_types">list</field>
+        <field name="state">code</field>
+        <field name="code">
+            if records:
+            action = records.action_generate_payroll()
+        </field>
+        <field name="groups_id" eval="[(4, ref('hr_payroll.group_hr_payroll_manager'))]"/>
+    </record>
+
+    <!-- Add action to menu -->
+    <menuitem id="menu_hr_timesheet_to_payroll"
+              name="Timesheet to Payroll"
+              parent="hr_timesheet.menu_timesheets_reports"
+              action="action_hr_timesheet_to_payroll_wizard"
+              sequence="50"
+              groups="hr_payroll.group_hr_payroll_manager"/>
+</odoo>

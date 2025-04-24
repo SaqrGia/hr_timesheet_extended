@@ -43,6 +43,14 @@ class HrTimesheetApproval(models.Model):
     department_head_signature = fields.Binary(string='Department Head Signature')
     hr_signature = fields.Binary(string='HR Signature')
 
+    # Payroll related fields
+    work_entry_type_id = fields.Many2one('hr.work.entry.type', string='Work Entry Type',
+                                         readonly=True, copy=False)
+    payslip_id = fields.Many2one('hr.payslip', string='Payslip', readonly=True, copy=False)
+    payroll_processed = fields.Boolean(string='Processed in Payroll', default=False, copy=False)
+    payroll_batch_id = fields.Many2one('hr.payslip.run', string='Payroll Batch', readonly=True,
+                                       copy=False)
+
     def action_view_timesheet_grid(self):
         """
         Method to open the grid view for the timesheet lines related to this approval request
@@ -65,6 +73,31 @@ class HrTimesheetApproval(models.Model):
                 'grid_range': 'week',
                 'search_default_groupby_project': True
             },
+        }
+
+    def action_generate_payroll(self):
+        """
+        Action to open the timesheet to payroll wizard
+        """
+        # Check if there are selected records
+        selected_ids = self.env.context.get('active_ids', [])
+        if not selected_ids:
+            raise UserError(_("No timesheet approvals selected."))
+
+        # Verify all selected records are HR approved
+        selected_approvals = self.browse(selected_ids)
+        not_approved = selected_approvals.filtered(lambda a: a.state != 'hr_approved')
+        if not_approved:
+            raise UserError(_("All selected timesheet approvals must be in 'HR Approved' state."))
+
+        # Open the wizard
+        return {
+            'name': _('Generate Payroll Entries'),
+            'type': 'ir.actions.act_window',
+            'res_model': 'hr.timesheet.to.payroll.wizard',
+            'view_mode': 'form',
+            'target': 'new',
+            'context': {'default_timesheet_approval_ids': selected_ids},
         }
 
     @api.depends('timesheet_line_ids.unit_amount')
@@ -210,10 +243,25 @@ class HrTimesheetApproval(models.Model):
 
         return res
 
-    @api.onchange('employee_id')
     def _onchange_employee_id(self):
         """When employee changes, update the manager and department head"""
         if self.employee_id:
             self.manager_id = self.employee_id.parent_id.user_id
             self.department_id = self.employee_id.department_id
             self.department_head_id = self.employee_id.department_id.manager_id.user_id
+
+    def action_view_payslip(self):
+        """View the payslip associated with this timesheet approval"""
+        self.ensure_one()
+
+        if not self.payslip_id:
+            raise UserError(_("No payslip is associated with this timesheet approval."))
+
+        return {
+            'name': _('Payslip'),
+            'type': 'ir.actions.act_window',
+            'res_model': 'hr.payslip',
+            'res_id': self.payslip_id.id,
+            'view_mode': 'form',
+            'target': 'current',
+        }
