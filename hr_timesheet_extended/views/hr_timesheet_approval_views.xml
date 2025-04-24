@@ -23,22 +23,37 @@
         <field name="arch" type="xml">
             <form string="Timesheet Approval">
                 <header>
+                    <!-- Submit button - visible only if state is draft -->
                     <button name="action_submit" string="Submit for Approval" type="object"
                             class="oe_highlight" invisible="state != 'draft'"/>
+
+                    <!-- Manager approval button - visible only if state is submitted and current user is manager -->
                     <button name="action_manager_approve" string="Approve (Manager)" type="object"
                             class="oe_highlight"
                             invisible="state != 'submitted' or manager_id != uid"/>
+
+                    <!-- CEO approval button - visible only if state is manager_approved and user is in CEO group -->
                     <button name="action_ceo_approve" string="Approve (CEO)" type="object"
                             class="oe_highlight"
-                            invisible="state != 'manager_approved' or not uid.has_group('hr_timesheet_extended.group_timesheet_ceo')"/>
+                            invisible="state != 'manager_approved'"
+                            groups="hr_timesheet_extended.group_timesheet_ceo"/>
+
+                    <!-- HR approval button - visible only if state is ceo_approved and user is in HR manager group -->
                     <button name="action_hr_approve" string="Approve (HR)" type="object"
-                            class="oe_highlight" groups="hr.group_hr_manager"
-                            invisible="state != 'ceo_approved'"/>
+                            class="oe_highlight"
+                            invisible="state != 'ceo_approved'"
+                            groups="hr.group_hr_manager"/>
+
+                    <!-- Reject button - not visible for draft, hr_approved, or rejected states -->
                     <button name="action_reject" string="Reject" type="object"
                             class="btn-danger"
                             invisible="state in ['draft', 'hr_approved', 'rejected']"/>
+
+                    <!-- Reset to draft button - not visible for draft or hr_approved states -->
                     <button name="action_reset_to_draft" string="Reset to Draft" type="object"
                             invisible="state in ['draft', 'hr_approved']"/>
+
+                    <!-- Status bar -->
                     <field name="state" widget="statusbar"
                            statusbar_visible="draft,submitted,manager_approved,ceo_approved,hr_approved"/>
                 </header>
@@ -169,15 +184,27 @@
                                             <div class="col-6">
                                                 <div class="signature-box">
                                                     <label for="ceo_signature">CEO</label>
+                                                    <!-- Firma del CEO - Editable solo para usuarios del grupo CEO cuando el estado es manager_approved -->
                                                     <field name="ceo_signature" widget="signature"
-                                                           readonly="state != 'manager_approved' or not uid.has_group('hr_timesheet_extended.group_timesheet_ceo')"/>
+                                                           readonly="state != 'manager_approved'"
+                                                           groups="hr_timesheet_extended.group_timesheet_ceo"/>
+                                                    <!-- Versión de solo lectura para los demás usuarios -->
+                                                    <field name="ceo_signature" widget="signature"
+                                                           readonly="1"
+                                                           groups="!hr_timesheet_extended.group_timesheet_ceo"/>
                                                 </div>
                                             </div>
                                             <div class="col-6">
                                                 <div class="signature-box">
                                                     <label for="hr_signature">HR</label>
+                                                    <!-- Firma de RRHH - Editable solo para managers de RRHH cuando el estado es ceo_approved -->
                                                     <field name="hr_signature" widget="signature"
-                                                           readonly="state != 'ceo_approved' or hr_manager_id != uid"/>
+                                                           readonly="state != 'ceo_approved'"
+                                                           groups="hr.group_hr_manager"/>
+                                                    <!-- Versión de solo lectura para los demás usuarios -->
+                                                    <field name="hr_signature" widget="signature"
+                                                           readonly="1"
+                                                           groups="!hr.group_hr_manager"/>
                                                 </div>
                                             </div>
                                         </div>
