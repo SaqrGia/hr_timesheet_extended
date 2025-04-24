@@ -1,39 +1,18 @@
 from odoo import models, fields, api, _
 from odoo.exceptions import UserError, ValidationError
-from datetime import datetime, timedelta
-import logging
+from datetime import datetime, timedelta  # Verificamos que datetime está importado
 
 
 class AccountAnalyticLine(models.Model):
-    _inherit = 'account.analytic.line'
-
-    # Add state field to track approval status
-    state = fields.Selection([
-        ('draft', 'Draft'),
-        ('submitted', 'Submitted'),
-        ('manager_approved', 'Manager Approved'),
-        ('department_approved', 'Department Head Approved'),
-        ('hr_approved', 'HR Approved'),
-        ('rejected', 'Rejected'),
-    ], string='Status', default='draft', tracking=True, copy=False)
+    _inherit = ['account.analytic.line', 'timesheet.approval.mixin']
+    _name = 'account.analytic.line'
 
     # Fields to track who approved and when
-    manager_id = fields.Many2one('res.users', string='Manager', related='employee_id.parent_id.user_id', store=False)
-
+    manager_id = fields.Many2one('res.users', string='Manager', compute='_compute_manager_id', store=False)
     department_head_id = fields.Many2one('res.users', string='Department Head', compute='_compute_department_head_id',
-                                         store=True, ondelete='set null')
+                                         store=True)
     hr_manager_id = fields.Many2one('res.users', string='HR Manager',
-                                    domain=lambda self: [('groups_id', 'in', self.env.ref('hr.group_hr_manager').id)],
-                                    ondelete='set null')
-
-    submitted_date = fields.Datetime(string='Submitted On')
-    manager_approval_date = fields.Datetime(string='Manager Approved On')
-    department_approval_date = fields.Datetime(string='Department Head Approved On')
-    hr_approval_date = fields.Datetime(string='HR Approved On')
-    rejection_date = fields.Datetime(string='Rejected On')
-    rejection_reason = fields.Text(string='Rejection Reason')
-    rejected_by = fields.Many2one('res.users', string='Rejected By')
-    company_id = fields.Many2one('res.company', string='Company', related='employee_id.company_id', store=True)
+                                    domain=lambda self: [('groups_id', 'in', self.env.ref('hr.group_hr_manager').id)])
 
     # Computed fields for totals (will be displayed in the footer)
     total_hours = fields.Float(string='Total Hours', compute='_compute_total_hours', store=True, compute_sudo=True,
@@ -73,18 +52,10 @@ class AccountAnalyticLine(models.Model):
         # Calculate date_start and date_end based on grid_range using Odoo's logic
         if grid_range == 'week':
             # This uses Odoo's logic for determining the start/end of week
-            # First day is the anchor's week's Sunday, last day is Saturday
-            # Adjust weekday calculation: 0 is Monday in Python, but Odoo may be using Sunday as first day
-            weekday = grid_anchor.weekday()
-            # If anchor is Sunday (weekday=6), start date is the anchor itself
-            # Otherwise, go back to previous Sunday
-            if weekday == 6:  # Sunday
-                date_start = grid_anchor
-            else:
-                # Go back to previous Sunday (weekday + 1 days ago)
-                date_start = grid_anchor - timedelta(days=weekday + 1)
-            # End date is 6 days after start date (Saturday)
-            date_end = date_start + timedelta(days=6)
+            # First day is the anchor's week's Monday in Odoo 17, last day is Sunday
+            start_of_week = grid_anchor - timedelta(days=grid_anchor.weekday())
+            date_start = start_of_week
+            date_end = start_of_week + timedelta(days=6)
         elif grid_range == 'month':
             # First day of the month
             date_start = grid_anchor.replace(day=1)
@@ -147,19 +118,9 @@ class AccountAnalyticLine(models.Model):
             'view_mode': 'form',
             'target': 'current',
         }
-    @api.model
-    def create_weekly_approval_wizard(self):
-        """عرض معالج إنشاء طلب موافقة أسبوعي"""
-        return {
-            'name': _('إنشاء طلب موافقة أسبوعي'),
-            'type': 'ir.actions.act_window',
-            'res_model': 'hr.timesheet.approval.wizard',
-            'view_mode': 'form',
-            'target': 'new',
-            'context': {
-                'default_employee_id': self.env.user.employee_id.id,
-            }
-        }
+
+
+
     @api.depends('employee_id')
     def _compute_manager_id(self):
         for line in self:
@@ -184,9 +145,33 @@ class AccountAnalyticLine(models.Model):
     @api.depends('employee_id', 'date')
     def _compute_minimum_hours(self):
         for line in self:
-            # Default minimum hours per day (8 hours)
-            # This could be made configurable or fetched from employee contract
-            line.minimum_hours = 8.0
+            # Get the working hours from the employee's contract
+            minimum_hours = 8.0  # Default value if no contract is found
+
+            if line.employee_id and line.date:
+                # Find the active contract for the employee
+                contract = self.env['hr.contract'].search([
+                    ('employee_id', '=', line.employee_id.id),
+                    ('state', '=', 'open'),
+                    ('date_start', '<=', line.date),
+                    '|',
+                    ('date_end', '>=', line.date),
+                    ('date_end', '=', False)
+                ], limit=1)
+
+                if contract:
+                    # If there's a resource calendar defined in the contract
+                    if contract.resource_calendar_id:
+                        # Calculate the expected hours for this day
+                        working_hours = contract.resource_calendar_id.get_work_hours_count(
+                            datetime.combine(line.date, datetime.min.time()),
+                            datetime.combine(line.date, datetime.max.time()),
+                            compute_leaves=True,
+                        )
+                        if working_hours > 0:
+                            minimum_hours = working_hours
+
+            line.minimum_hours = minimum_hours
 
     @api.depends('total_hours', 'minimum_hours')
     def _compute_overtime_hours(self):
@@ -196,211 +181,32 @@ class AccountAnalyticLine(models.Model):
             else:
                 line.overtime_hours = 0.0
 
-    # Action methods for the workflow
+    # Override methods from the mixin to update the related timesheet lines
     def action_submit(self):
-        for line in self:
-            if line.state != 'draft':
-                raise UserError(_("Only draft timesheets can be submitted for approval."))
-
-            # Set the state to submitted
-            line.write({
-                'state': 'submitted',
-                'submitted_date': fields.Datetime.now(),
-            })
-
-            # Create notification for the manager
-            if line.manager_id:
-                line.message_post(
-                    body=_('Timesheet submitted for your approval'),
-                    message_type='notification',
-                    partner_ids=[line.manager_id.partner_id.id]
-                )
-            else:
-                raise UserError(
-                    _("Cannot submit for approval: No manager defined for employee %s.") % line.employee_id.name)
+        res = super(AccountAnalyticLine, self).action_submit()
+        return res
 
     def action_manager_approve(self):
-        for line in self:
-            if line.state != 'submitted':
-                raise UserError(_("Only submitted timesheets can be approved by the manager."))
-
-            # Check if the current user is the manager
-            if self.env.user != line.manager_id:
-                raise UserError(_("Only the assigned manager can approve this timesheet."))
-
-            # Mark as approved by manager
-            line.write({
-                'state': 'manager_approved',
-                'manager_approval_date': fields.Datetime.now(),
-            })
-
-            # Create notification for the department head
-            if line.department_head_id:
-                line.message_post(
-                    body=_('Timesheet approved by manager, awaiting department head approval'),
-                    message_type='notification',
-                    partner_ids=[line.department_head_id.partner_id.id]
-                )
-            else:
-                raise UserError(_("Cannot proceed with approval: No department head defined."))
+        res = super(AccountAnalyticLine, self).action_manager_approve()
+        return res
 
     def action_department_approve(self):
-        for line in self:
-            if line.state != 'manager_approved':
-                raise UserError(_("Only manager-approved timesheets can be approved by the department head."))
-
-            # Check if the current user is the department head
-            if self.env.user != line.department_head_id:
-                raise UserError(_("Only the department head can approve this timesheet."))
-
-            # Mark as approved by department head
-            line.write({
-                'state': 'department_approved',
-                'department_approval_date': fields.Datetime.now(),
-            })
-
-            # Get HR managers and create notification
-            hr_managers = self.env['res.users'].search([
-                ('groups_id', 'in', self.env.ref('hr.group_hr_manager').id)
-            ])
-
-            if hr_managers:
-                line.message_post(
-                    body=_('Timesheet approved by department head, awaiting HR approval'),
-                    message_type='notification',
-                    partner_ids=[manager.partner_id.id for manager in hr_managers]
-                )
-            else:
-                raise UserError(_("Cannot proceed with approval: No HR manager found in the system."))
+        res = super(AccountAnalyticLine, self).action_department_approve()
+        return res
 
     def action_hr_approve(self):
-        for line in self:
-            if line.state != 'department_approved':
-                raise UserError(_("Only department-approved timesheets can be approved by HR."))
-
-            # Check if the current user is an HR manager
-            if not self.env.user.has_group('hr.group_hr_manager'):
-                raise UserError(_("Only HR managers can perform the final approval."))
-
-            # Mark as approved by HR
-            line.write({
-                'state': 'hr_approved',
-                'hr_approval_date': fields.Datetime.now(),
-                'hr_manager_id': self.env.user.id,
-            })
-
-            # Create notification for the employee
-            if line.employee_id.user_id:
-                line.message_post(
-                    body=_('Your timesheet has been approved by HR'),
-                    message_type='notification',
-                    partner_ids=[line.employee_id.user_id.partner_id.id]
-                )
+        res = super(AccountAnalyticLine, self).action_hr_approve()
+        return res
 
     def action_reject(self, reason=None):
-        for line in self:
-            if line.state in ['draft', 'hr_approved']:
-                raise UserError(_("Cannot reject timesheets that are in draft or already approved by HR."))
-
-            # Mark as rejected
-            line.write({
-                'state': 'rejected',
-                'rejection_date': fields.Datetime.now(),
-                'rejection_reason': reason,
-                'rejected_by': self.env.user.id,
-            })
-
-            # Create notification for the employee about the rejection
-            if line.employee_id.user_id:
-                line.message_post(
-                    body=_('Your timesheet has been rejected. Reason: %s') % (reason or _('No reason provided')),
-                    message_type='notification',
-                    partner_ids=[line.employee_id.user_id.partner_id.id]
-                )
+        res = super(AccountAnalyticLine, self).action_reject(reason)
+        return res
 
     def action_reset_to_draft(self):
-        for line in self:
-            if line.state == 'hr_approved':
-                raise UserError(_("Cannot reset timesheets that are already approved by HR."))
-
-            # Reset to draft
-            line.write({
-                'state': 'draft',
-                'submitted_date': False,
-                'manager_approval_date': False,
-                'department_approval_date': False,
-                'hr_approval_date': False,
-                'rejection_date': False,
-                'rejection_reason': False,
-                'rejected_by': False,
-            })
-
-            # Cancel any pending activities
-            self._cancel_pending_activities()
-
-    def _create_approval_activity(self, partner, activity_type):
-        """Create an activity for the approval process"""
-        activity_type_id = self.env.ref('mail.mail_activity_data_todo').id
-        summary = ''
-        note = ''
-
-        if activity_type == 'manager_approval':
-            summary = _('Timesheet Approval Needed')
-            note = _('Please review and approve the timesheet submitted by %s') % self.employee_id.name
-        elif activity_type == 'department_approval':
-            summary = _('Department Approval Needed for Timesheet')
-            note = _('Please review and approve the timesheet of %s after manager approval') % self.employee_id.name
-        elif activity_type == 'hr_approval':
-            summary = _('HR Final Approval Needed for Timesheet')
-            note = _('Please review and give final approval for the timesheet of %s') % self.employee_id.name
-
-        # Create the activity
-        self.env['mail.activity'].create({
-            'activity_type_id': activity_type_id,
-            'summary': summary,
-            'note': note,
-            'res_id': self.id,
-            'res_model_id': self.env.ref('analytic.model_account_analytic_line').id,
-            'user_id': partner.user_ids[0].id if partner.user_ids else False,
-            'date_deadline': fields.Date.today() + timedelta(days=2),  # Due in 2 days
-        })
-
-    def _create_rejection_activity(self, partner, reason):
-        """Create an activity to notify about rejection"""
-        activity_type_id = self.env.ref('mail.mail_activity_data_todo').id
-        summary = _('Timesheet Rejected')
-        note = _('Your timesheet has been rejected. Reason: %s') % (reason or _('No reason provided'))
-
-        self.env['mail.activity'].create({
-            'activity_type_id': activity_type_id,
-            'summary': summary,
-            'note': note,
-            'res_id': self.id,
-            'res_model_id': self.env.ref('analytic.model_account_analytic_line').id,
-            'user_id': partner.user_ids[0].id if partner.user_ids else False,
-            'date_deadline': fields.Date.today() + timedelta(days=1),  # Due in 1 day
-        })
-
-    def _mark_activities_done(self):
-        """Mark all activities related to this timesheet as done"""
-        activities = self.env['mail.activity'].search([
-            ('res_id', '=', self.id),
-            ('res_model_id', '=', self.env.ref('analytic.model_account_analytic_line').id),
-        ])
-        for activity in activities:
-            activity.action_done()
-
-    def _cancel_pending_activities(self):
-        """Cancel all pending activities related to this timesheet"""
-        activities = self.env['mail.activity'].search([
-            ('res_id', '=', self.id),
-            ('res_model_id', '=', self.env.ref('analytic.model_account_analytic_line').id),
-        ])
-        for activity in activities:
-            activity.unlink()
+        res = super(AccountAnalyticLine, self).action_reset_to_draft()
+        return res
 
     # Allow for batch approval actions from the grid view
-    @api.model
     def action_submit_selected(self):
         """Submit multiple timesheets for approval"""
         for record in self:
@@ -408,7 +214,6 @@ class AccountAnalyticLine(models.Model):
                 record.action_submit()
         return True
 
-    @api.model
     def action_manager_approve_selected(self):
         """Manager approve multiple timesheets"""
         for record in self:
@@ -416,7 +221,6 @@ class AccountAnalyticLine(models.Model):
                 record.action_manager_approve()
         return True
 
-    @api.model
     def action_department_approve_selected(self):
         """Department head approve multiple timesheets"""
         for record in self:
@@ -424,7 +228,6 @@ class AccountAnalyticLine(models.Model):
                 record.action_department_approve()
         return True
 
-    @api.model
     def action_hr_approve_selected(self):
         """HR approve multiple timesheets"""
         if not self.env.user.has_group('hr.group_hr_manager'):

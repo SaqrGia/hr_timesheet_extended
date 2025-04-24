@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
+    <!-- Form View for Timesheet Rejection Wizard -->
     <record id="view_hr_timesheet_rejection_wizard_form" model="ir.ui.view">
         <field name="name">hr.timesheet.rejection.wizard.form</field>
         <field name="model">hr.timesheet.rejection.wizard</field>
@@ -8,21 +9,46 @@
                 <sheet>
                     <group>
                         <field name="timesheet_ids" invisible="1"/>
+                        <field name="approval_id" invisible="1"/>
                         <field name="rejection_reason" placeholder="Please provide a reason for rejection..." required="1"/>
                     </group>
                 </sheet>
                 <footer>
-                    <button name="action_reject" string="Reject" type="object" class="btn-primary"/>
+                    <button name="action_reject" string="Reject" type="object" class="btn-danger"/>
                     <button string="Cancel" class="btn-secondary" special="cancel"/>
                 </footer>
             </form>
         </field>
     </record>
 
+    <!-- Action for Timesheet Rejection Wizard -->
     <record id="action_hr_timesheet_rejection_wizard" model="ir.actions.act_window">
         <field name="name">Reject Timesheet</field>
         <field name="res_model">hr.timesheet.rejection.wizard</field>
         <field name="view_mode">form</field>
         <field name="target">new</field>
+    </record>
+
+    <!-- Add rejection button to timesheet approval form -->
+    <record id="view_hr_timesheet_approval_form_rejection_button" model="ir.ui.view">
+        <field name="name">hr.timesheet.approval.form.rejection.button</field>
+        <field name="model">hr.timesheet.approval</field>
+        <field name="inherit_id" ref="hr_timesheet_extended.view_hr_timesheet_approval_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//button[@name='action_reject']" position="attributes">
+                <attribute name="type">action</attribute>
+                <attribute name="name">%(action_hr_timesheet_rejection_wizard)d</attribute>
+            </xpath>
+        </field>
+    </record>
+
+    <!-- Add action for rejecting selected timesheets -->
+    <record id="action_reject_selected_timesheets" model="ir.actions.act_window">
+        <field name="name">Reject Timesheets</field>
+        <field name="res_model">hr.timesheet.rejection.wizard</field>
+        <field name="view_mode">form</field>
+        <field name="target">new</field>
+        <field name="binding_model_id" ref="analytic.model_account_analytic_line"/>
+        <field name="binding_view_types">list</field>
     </record>
 </odoo>
