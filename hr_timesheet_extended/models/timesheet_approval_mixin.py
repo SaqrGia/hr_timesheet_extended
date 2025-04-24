@@ -1,6 +1,9 @@
 from odoo import models, fields, api, _
 from odoo.exceptions import UserError
 from datetime import datetime, timedelta  # Asegurarse de que datetime está importado
+import logging
+_logger = logging.getLogger(__name__)
+
 
 
 class TimesheetApprovalMixin(models.AbstractModel):
@@ -15,7 +18,7 @@ class TimesheetApprovalMixin(models.AbstractModel):
         ('draft', 'Draft'),
         ('submitted', 'Submitted'),
         ('manager_approved', 'Manager Approved'),
-        ('department_approved', 'Department Head Approved'),
+        ('ceo_approved', 'CEO Approved'),  # تغيير من department_approved إلى ceo_approved
         ('hr_approved', 'HR Approved'),
         ('rejected', 'Rejected'),
     ], string='Status', default='draft', tracking=True, copy=False)
@@ -23,7 +26,7 @@ class TimesheetApprovalMixin(models.AbstractModel):
     # Approval dates tracking
     submitted_date = fields.Datetime(string='Submitted On')
     manager_approval_date = fields.Datetime(string='Manager Approved On')
-    department_approval_date = fields.Datetime(string='Department Head Approved On')
+    ceo_approval_date = fields.Datetime(string='CEO Approved On')  # تغيير من department_approval_date إلى ceo_approval_date
     hr_approval_date = fields.Datetime(string='HR Approved On')
     rejection_date = fields.Datetime(string='Rejected On')
     rejection_reason = fields.Text(string='Rejection Reason')
@@ -35,11 +38,9 @@ class TimesheetApprovalMixin(models.AbstractModel):
         employee = self.employee_id
         return self.env.user == employee.parent_id.user_id
 
-    def _check_department_head_access(self):
-        """Check if current user is department head"""
-        self.ensure_one()
-        department = self.employee_id.department_id
-        return department and self.env.user == department.manager_id.user_id
+    def _check_ceo_access(self):
+        """Check if current user is CEO"""
+        return self.env.user.has_group('hr_timesheet_extended.group_timesheet_ceo')  # تحقق من مجموعة CEO الجديدة
 
     def _check_hr_manager_access(self):
         """Check if current user is HR manager"""
@@ -52,13 +53,12 @@ class TimesheetApprovalMixin(models.AbstractModel):
             return self.employee_id.parent_id.user_id.partner_id
         return False
 
-    def _get_department_head_partner(self):
-        """Get department head partner for notifications"""
-        self.ensure_one()
-        department = self.employee_id.department_id
-        if department and department.manager_id and department.manager_id.user_id:
-            return department.manager_id.user_id.partner_id
-        return False
+    def _get_ceo_partners(self):
+        """Get CEO partners for notifications"""
+        ceo_users = self.env['res.users'].search([
+            ('groups_id', 'in', self.env.ref('hr_timesheet_extended.group_timesheet_ceo').id)
+        ])
+        return ceo_users.mapped('partner_id')
 
     def _get_hr_manager_partners(self):
         """Get HR manager partners for notifications"""
@@ -144,40 +144,59 @@ class TimesheetApprovalMixin(models.AbstractModel):
             'manager_approval_date': fields.Datetime.now(),
         })
 
-        # Create notification for the department head
-        dept_head_partner = self._get_department_head_partner()
-        if not dept_head_partner:
-            raise UserError(_("Cannot proceed with approval: No department head defined."))
+        # Create notification for the CEO - use try/except to handle potential errors
+        try:
+            ceo_partners = self._get_ceo_partners()
+            if not ceo_partners:
+                self.message_post(
+                    body=_('Approved by manager, no CEO defined in the system.'),
+                    message_type='notification',
+                    subtype_xmlid='mail.mt_note'
+                )
+                return True
 
-        # Create activity for department head
-        if hasattr(self, 'employee_id') and self.employee_id.department_id.manager_id.user_id:
-            self._create_approval_activity(
-                self.employee_id.department_id.manager_id.user_id,
-                _('Department Approval Needed'),
-                _('Please review and approve the timesheet of %s after manager approval') % self.employee_id.name
+            # Create activity for CEO users
+            ceo_users = self.env['res.users'].search([
+                ('groups_id', 'in', self.env.ref('hr_timesheet_extended.group_timesheet_ceo').id)
+            ])
+            for ceo_user in ceo_users:
+                self._create_approval_activity(
+                    ceo_user,
+                    _('CEO Approval Needed'),
+                    _('Please review and approve the timesheet of %s after manager approval') % self.employee_id.name
+                )
+
+            # Post message
+            self.message_post(
+                body=_('Approved by manager, awaiting CEO approval'),
+                message_type='notification',
+                subtype_xmlid='mail.mt_note',
+                partner_ids=ceo_partners.ids
+            )
+        except Exception as e:
+            # Log the error but don't block the approval
+            _logger.error("Error notifying CEO: %s", str(e))
+            self.message_post(
+                body=_('Approved by manager. Error notifying CEO.'),
+                message_type='notification',
+                subtype_xmlid='mail.mt_note'
             )
 
-        # Post message
-        self.message_post(
-            body=_('Approved by manager, awaiting department head approval'),
-            message_type='notification',
-            subtype_xmlid='mail.mt_note',
-            partner_ids=[dept_head_partner.id]
-        )
+        return True
 
-    def action_department_approve(self):
-        """Department head approval action"""
+    def action_ceo_approve(self):
+        """CEO approval action"""
         if self.state != 'manager_approved':
-            raise UserError(_("Only manager-approved records can be approved by the department head."))
+            raise UserError(_("Only manager-approved records can be approved by the CEO."))
 
-        # Check if the current user is the department head
-        if not self._check_department_head_access():
-            raise UserError(_("Only the department head can approve this record."))
+        # Check if the current user is a CEO
+        if not self._check_ceo_access():
+            raise UserError(_("Only the CEO can approve this record."))
 
-        # Mark as approved by department head
+        # Mark as approved by CEO
         self.write({
-            'state': 'department_approved',
-            'department_approval_date': fields.Datetime.now(),
+            'state': 'ceo_approved',
+            'ceo_approval_date': fields.Datetime.now(),
         })
 
         # Get HR managers and create notification
@@ -198,7 +217,7 @@ class TimesheetApprovalMixin(models.AbstractModel):
 
         # Post message
         self.message_post(
-            body=_('Approved by department head, awaiting HR approval'),
+            body=_('Approved by CEO, awaiting HR approval'),
             message_type='notification',
             subtype_xmlid='mail.mt_note',
             partner_ids=hr_manager_partners.ids
@@ -206,8 +225,8 @@ class TimesheetApprovalMixin(models.AbstractModel):
 
     def action_hr_approve(self):
         """HR approval action"""
-        if self.state != 'department_approved':
-            raise UserError(_("Only department-approved records can be approved by HR."))
+        if self.state != 'ceo_approved':  # تغيير من department_approved إلى ceo_approved
+            raise UserError(_("Only CEO-approved records can be approved by HR."))
 
         # Check if the current user is an HR manager
         if not self._check_hr_manager_access():
@@ -265,7 +284,7 @@ class TimesheetApprovalMixin(models.AbstractModel):
             'state': 'draft',
             'submitted_date': False,
             'manager_approval_date': False,
-            'department_approval_date': False,
+            'ceo_approval_date': False,  # تغيير من department_approval_date إلى ceo_approval_date
             'hr_approval_date': False,
             'rejection_date': False,
             'rejection_reason': False,

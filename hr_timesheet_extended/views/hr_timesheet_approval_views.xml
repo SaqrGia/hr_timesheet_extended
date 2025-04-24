@@ -28,19 +28,19 @@
                     <button name="action_manager_approve" string="Approve (Manager)" type="object"
                             class="oe_highlight"
                             invisible="state != 'submitted' or manager_id != uid"/>
-                    <button name="action_department_approve" string="Approve (Department Head)" type="object"
+                    <button name="action_ceo_approve" string="Approve (CEO)" type="object"
                             class="oe_highlight"
-                            invisible="state != 'manager_approved' or department_head_id != uid"/>
+                            invisible="state != 'manager_approved' or not uid.has_group('hr_timesheet_extended.group_timesheet_ceo')"/>
                     <button name="action_hr_approve" string="Approve (HR)" type="object"
                             class="oe_highlight" groups="hr.group_hr_manager"
-                            invisible="state != 'department_approved'"/>
+                            invisible="state != 'ceo_approved'"/>
                     <button name="action_reject" string="Reject" type="object"
                             class="btn-danger"
                             invisible="state in ['draft', 'hr_approved', 'rejected']"/>
                     <button name="action_reset_to_draft" string="Reset to Draft" type="object"
                             invisible="state in ['draft', 'hr_approved']"/>
                     <field name="state" widget="statusbar"
-                           statusbar_visible="draft,submitted,manager_approved,department_approved,hr_approved"/>
+                           statusbar_visible="draft,submitted,manager_approved,ceo_approved,hr_approved"/>
                 </header>
                 <sheet>
                     <div class="oe_button_box" name="button_box">
@@ -71,7 +71,7 @@
                             <field name="employee_id" readonly="state != 'draft'"/>
                             <field name="department_id" readonly="1"/>
                             <field name="manager_id" readonly="1"/>
-                            <field name="department_head_id" readonly="1"/>
+                            <field name="ceo_id" readonly="1" options="{'no_create': True}"/>
                         </group>
                         <group>
                             <field name="date_start" readonly="state != 'draft'"/>
@@ -86,7 +86,7 @@
                             <field name="timesheet_line_ids" readonly="state != 'draft'">
                                 <tree editable="bottom" decoration-muted="state == 'draft'"
                                       decoration-info="state == 'submitted'"
-                                      decoration-warning="state in ['manager_approved', 'department_approved']"
+                                      decoration-warning="state in ['manager_approved', 'ceo_approved']"
                                       decoration-success="state == 'hr_approved'"
                                       decoration-danger="state == 'rejected'">
                                     <field name="date"/>
@@ -98,7 +98,7 @@
                                            decoration-info="state == 'draft'"
                                            decoration-success="state == 'hr_approved'"
                                            decoration-primary="state == 'submitted'"
-                                           decoration-warning="state in ['manager_approved', 'department_approved']"
+                                           decoration-warning="state in ['manager_approved', 'ceo_approved']"
                                            decoration-danger="state == 'rejected'"/>
                                 </tree>
                             </field>
@@ -109,8 +109,8 @@
                                     <field name="submitted_date" readonly="1" invisible="submitted_date == False"/>
                                     <field name="manager_approval_date" readonly="1"
                                            invisible="manager_approval_date == False"/>
-                                    <field name="department_approval_date" readonly="1"
-                                           invisible="department_approval_date == False"/>
+                                    <field name="ceo_approval_date" readonly="1"
+                                           invisible="ceo_approval_date == False"/>
                                     <field name="hr_approval_date" readonly="1" invisible="hr_approval_date == False"/>
                                 </group>
                                 <group string="HR Approval">
@@ -168,16 +168,16 @@
                                         <div class="row">
                                             <div class="col-6">
                                                 <div class="signature-box">
-                                                    <label for="department_head_signature">Department Head</label>
-                                                    <field name="department_head_signature" widget="signature"
-                                                           readonly="state != 'manager_approved' or department_head_id != uid"/>
+                                                    <label for="ceo_signature">CEO</label>
+                                                    <field name="ceo_signature" widget="signature"
+                                                           readonly="state != 'manager_approved' or not uid.has_group('hr_timesheet_extended.group_timesheet_ceo')"/>
                                                 </div>
                                             </div>
                                             <div class="col-6">
                                                 <div class="signature-box">
                                                     <label for="hr_signature">HR</label>
                                                     <field name="hr_signature" widget="signature"
-                                                           readonly="state != 'department_approved' or hr_manager_id != uid"/>
+                                                           readonly="state != 'ceo_approved' or hr_manager_id != uid"/>
                                                 </div>
                                             </div>
                                         </div>
@@ -228,7 +228,7 @@
         <field name="arch" type="xml">
             <tree string="Timesheet Approvals" decoration-muted="state == 'draft'"
                   decoration-info="state == 'submitted'"
-                  decoration-warning="state in ['manager_approved', 'department_approved']"
+                  decoration-warning="state in ['manager_approved', 'ceo_approved']"
                   decoration-success="state == 'hr_approved'"
                   decoration-danger="state == 'rejected'">
                 <header>
@@ -247,7 +247,7 @@
                        decoration-info="state == 'draft'"
                        decoration-success="state == 'hr_approved'"
                        decoration-primary="state == 'submitted'"
-                       decoration-warning="state in ['manager_approved', 'department_approved']"
+                       decoration-warning="state in ['manager_approved', 'ceo_approved']"
                        decoration-danger="state == 'rejected'"/>
                 <field name="payroll_processed" invisible="1"/>
                 <field name="payslip_id" invisible="1"/>
@@ -273,8 +273,8 @@
                 <filter string="Submitted" name="submitted" domain="[('state', '=', 'submitted')]"/>
                 <filter string="Manager Approved" name="manager_approved"
                         domain="[('state', '=', 'manager_approved')]"/>
-                <filter string="Department Approved" name="department_approved"
-                        domain="[('state', '=', 'department_approved')]"/>
+                <filter string="CEO Approved" name="ceo_approved"
+                        domain="[('state', '=', 'ceo_approved')]"/>
                 <filter string="HR Approved" name="hr_approved" domain="[('state', '=', 'hr_approved')]"/>
                 <filter string="Rejected" name="rejected" domain="[('state', '=', 'rejected')]"/>
                 <separator/>
@@ -282,13 +282,13 @@
                         domain="['|', '|',
                                 ('state', '=', 'submitted'),
                                 ('state', '=', 'manager_approved'),
-                                ('state', '=', 'department_approved')]"/>
+                                ('state', '=', 'ceo_approved')]"/>
                 <separator/>
                 <filter string="My Approvals" name="my_approvals" domain="['|',
                         '&amp;', ('state', '=', 'submitted'), ('manager_id', '=', uid),
                         '|',
-                        '&amp;', ('state', '=', 'manager_approved'), ('department_head_id', '=', uid),
-                        '&amp;', ('state', '=', 'department_approved'), ('employee_id.user_id', '!=', uid)]"/>
+                        '&amp;', ('state', '=', 'manager_approved'), ('ceo_id', '=', uid),
+                        '&amp;', ('state', '=', 'ceo_approved'), ('employee_id.user_id', '!=', uid)]"/>
                 <separator/>
                 <filter string="Date" name="date" date="date_start"/>
                 <separator/>
@@ -350,7 +350,7 @@
                 Create a new timesheet approval request
             </p>
             <p>
-                Submit your timesheets for approval by your manager, department head, and HR.
+                Submit your timesheets for approval by your manager, CEO, and HR.
             </p>
         </field>
     </record>
@@ -384,8 +384,8 @@
         <field name="domain">['|',
             '&amp;', ('state', '=', 'submitted'), ('manager_id', '=', uid),
             '|',
-            '&amp;', ('state', '=', 'manager_approved'), ('department_head_id', '=', uid),
-            '&amp;', ('state', '=', 'department_approved'), ('employee_id.user_id', '!=', uid)]
+            '&amp;', ('state', '=', 'manager_approved'), ('ceo_id', '=', uid),
+            '&amp;', ('state', '=', 'ceo_approved'), ('employee_id.user_id', '!=', uid)]
         </field>
         <field name="context">{'search_default_to_approve': 1}</field>
         <field name="help" type="html">
@@ -415,5 +415,5 @@
     <menuitem id="menu_all_timesheet_approvals" name="All Timesheet Approvals"
               parent="menu_timesheet_approval_root"
               action="action_hr_timesheet_approval"
-              sequence="30" groups="hr.group_hr_manager"/>
+              sequence="30" groups="hr.group_hr_manager,hr_timesheet_extended.group_timesheet_ceo"/>
 </odoo>

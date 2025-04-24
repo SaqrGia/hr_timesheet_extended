@@ -1,10 +1,13 @@
 id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
 access_hr_timesheet_approval_user,hr.timesheet.approval.user,model_hr_timesheet_approval,hr_timesheet.group_hr_timesheet_user,1,1,1,0
 access_hr_timesheet_approval_manager,hr.timesheet.approval.manager,model_hr_timesheet_approval,hr.group_hr_user,1,1,1,1
+access_hr_timesheet_approval_ceo,hr.timesheet.approval.ceo,model_hr_timesheet_approval,hr_timesheet_extended.group_timesheet_ceo,1,1,1,1
 access_hr_timesheet_approval_hr_manager,hr.timesheet.approval.hr.manager,model_hr_timesheet_approval,hr.group_hr_manager,1,1,1,1
 access_timesheet_approval_report_user,timesheet.approval.report.user,model_timesheet_approval_report,hr_timesheet.group_hr_timesheet_user,1,0,0,0
 access_timesheet_approval_report_manager,timesheet.approval.report.manager,model_timesheet_approval_report,hr.group_hr_user,1,0,0,0
+access_timesheet_approval_report_ceo,timesheet.approval.report.ceo,model_timesheet_approval_report,hr_timesheet_extended.group_timesheet_ceo,1,0,0,0
 access_timesheet_approval_report_hr_manager,timesheet.approval.report.hr.manager,model_timesheet_approval_report,hr.group_hr_manager,1,0,0,0
 access_hr_timesheet_rejection_wizard_user,hr.timesheet.rejection.wizard.user,model_hr_timesheet_rejection_wizard,hr_timesheet.group_hr_timesheet_user,1,1,1,0
 access_hr_timesheet_rejection_wizard_manager,hr.timesheet.rejection.wizard.manager,model_hr_timesheet_rejection_wizard,hr.group_hr_user,1,1,1,0
+access_hr_timesheet_rejection_wizard_ceo,hr.timesheet.rejection.wizard.ceo,model_hr_timesheet_rejection_wizard,hr_timesheet_extended.group_timesheet_ceo,1,1,1,0
 access_hr_timesheet_to_payroll_wizard,hr.timesheet.to.payroll.wizard,model_hr_timesheet_to_payroll_wizard,hr_payroll.group_hr_payroll_manager,1,1,1,0

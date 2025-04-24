@@ -20,8 +20,8 @@ class HrTimesheetApproval(models.Model):
 
     # Approval related fields (inherited from mixin but we redefine for clarity)
     manager_id = fields.Many2one('res.users', string='Manager', related='employee_id.parent_id.user_id', store=True)
-    department_head_id = fields.Many2one('res.users', string='Department Head',
-                                         related='department_id.manager_id.user_id', store=True)
+    ceo_id = fields.Many2one('res.users', string='CEO',
+                             domain=lambda self: [('groups_id', 'in', self.env.ref('hr_timesheet_extended.group_timesheet_ceo').id)])
     hr_manager_id = fields.Many2one('res.users', string='HR Manager',
                                     domain=lambda self: [('groups_id', 'in', self.env.ref('hr.group_hr_manager').id)])
 
@@ -40,7 +40,7 @@ class HrTimesheetApproval(models.Model):
     # Signature fields for approval documentation
     employee_signature = fields.Binary(string='Employee Signature')
     manager_signature = fields.Binary(string='Manager Signature')
-    department_head_signature = fields.Binary(string='Department Head Signature')
+    ceo_signature = fields.Binary(string='CEO Signature')  # تغيير من department_head_signature إلى ceo_signature
     hr_signature = fields.Binary(string='HR Signature')
 
     # Payroll related fields
@@ -186,14 +186,14 @@ class HrTimesheetApproval(models.Model):
 
         return res
 
-    def action_department_approve(self):
+    def action_ceo_approve(self):  # تغيير من action_department_approve إلى action_ceo_approve
         for approval in self:
-            res = super(HrTimesheetApproval, approval).action_department_approve()
+            res = super(HrTimesheetApproval, approval).action_ceo_approve()
 
             # Update all timesheet lines
             approval.timesheet_line_ids.write({
-                'state': 'department_approved',
-                'department_approval_date': approval.department_approval_date,
+                'state': 'ceo_approved',  # تغيير من department_approved إلى ceo_approved
+                'ceo_approval_date': approval.ceo_approval_date,  # تغيير من department_approval_date إلى ceo_approval_date
             })
 
         return res
@@ -234,7 +234,7 @@ class HrTimesheetApproval(models.Model):
                 'state': 'draft',
                 'submitted_date': False,
                 'manager_approval_date': False,
-                'department_approval_date': False,
+                'ceo_approval_date': False,  # تغيير من department_approval_date إلى ceo_approval_date
                 'hr_approval_date': False,
                 'rejection_date': False,
                 'rejection_reason': False,
@@ -248,7 +248,6 @@ class HrTimesheetApproval(models.Model):
         if self.employee_id:
             self.manager_id = self.employee_id.parent_id.user_id
             self.department_id = self.employee_id.department_id
-            self.department_head_id = self.employee_id.department_id.manager_id.user_id
 
     def action_view_payslip(self):
         """View the payslip associated with this timesheet approval"""

@@ -12,7 +12,7 @@
                 <field name="total_hours" type="measure"/>
                 <field name="overtime_hours" type="measure"/>
                 <field name="time_to_manager_approval" type="measure"/>
-                <field name="time_to_department_approval" type="measure"/>
+                <field name="time_to_ceo_approval" type="measure"/>
                 <field name="time_to_hr_approval" type="measure"/>
                 <field name="total_approval_time" type="measure"/>
             </pivot>
@@ -43,7 +43,7 @@
                 <filter string="Draft" name="draft" domain="[('state', '=', 'draft')]"/>
                 <filter string="Submitted" name="submitted" domain="[('state', '=', 'submitted')]"/>
                 <filter string="Manager Approved" name="manager_approved" domain="[('state', '=', 'manager_approved')]"/>
-                <filter string="Department Approved" name="department_approved" domain="[('state', '=', 'department_approved')]"/>
+                <filter string="CEO Approved" name="ceo_approved" domain="[('state', '=', 'ceo_approved')]"/>
                 <filter string="HR Approved" name="hr_approved" domain="[('state', '=', 'hr_approved')]"/>
                 <filter string="Rejected" name="rejected" domain="[('state', '=', 'rejected')]"/>
                 <separator/>
@@ -54,7 +54,7 @@
                     <filter string="Status" name="status" context="{'group_by': 'state'}"/>
                     <filter string="Start Date" name="date_start" context="{'group_by': 'date_start:month'}"/>
                     <filter string="Manager" name="manager" context="{'group_by': 'manager_id'}"/>
-                    <filter string="Department Head" name="department_head" context="{'group_by': 'department_head_id'}"/>
+                    <filter string="CEO" name="ceo" context="{'group_by': 'ceo_id'}"/>
                     <filter string="HR Manager" name="hr_manager" context="{'group_by': 'hr_manager_id'}"/>
                     <filter string="Company" name="company" context="{'group_by': 'company_id'}"/>
                 </group>
@@ -83,7 +83,7 @@
               parent="hr_timesheet.menu_timesheets_reports"
               action="action_timesheet_approval_report"
               sequence="30"
-              groups="hr_timesheet.group_hr_timesheet_user,hr.group_hr_manager"/>
+              groups="hr_timesheet.group_hr_timesheet_user,hr.group_hr_manager,hr_timesheet_extended.group_timesheet_ceo"/>
 
     <!-- Print Timesheet Approval Form Template -->
     <template id="report_timesheet_approval_document">
@@ -106,8 +106,8 @@
                             <div t-elif="o.state == 'manager_approved'" class="badge badge-warning">
                                 <span>Manager Approved</span>
                             </div>
-                            <div t-elif="o.state == 'department_approved'" class="badge badge-warning">
-                                <span>Department Approved</span>
+                            <div t-elif="o.state == 'ceo_approved'" class="badge badge-warning">
+                                <span>CEO Approved</span>
                             </div>
                             <div t-elif="o.state == 'hr_approved'" class="badge badge-success">
                                 <span>HR Approved</span>
@@ -192,11 +192,11 @@
                                 <td><strong>Manager:</strong></td>
                                 <td><span t-field="o.manager_id.name"/></td>
                             </tr>
-                            <tr t-if="o.department_approval_date">
-                                <td><strong>Department Head Approved On:</strong></td>
-                                <td><span t-field="o.department_approval_date"/></td>
-                                <td><strong>Department Head:</strong></td>
-                                <td><span t-field="o.department_head_id.name"/></td>
+                            <tr t-if="o.ceo_approval_date">
+                                <td><strong>CEO Approved On:</strong></td>
+                                <td><span t-field="o.ceo_approval_date"/></td>
+                                <td><strong>CEO:</strong></td>
+                                <td><span t-field="o.ceo_id.name"/></td>
                             </tr>
                             <tr t-if="o.hr_approval_date">
                                 <td><strong>HR Approved On:</strong></td>

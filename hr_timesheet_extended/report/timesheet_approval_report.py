@@ -13,14 +13,14 @@ class TimesheetApprovalReport(models.Model):
     employee_id = fields.Many2one('hr.employee', string='Employee', readonly=True)
     department_id = fields.Many2one('hr.department', string='Department', readonly=True)
     manager_id = fields.Many2one('res.users', string='Manager', readonly=True)
-    department_head_id = fields.Many2one('res.users', string='Department Head', readonly=True)
+    ceo_id = fields.Many2one('res.users', string='CEO', readonly=True)  # تغيير من department_head_id إلى ceo_id
     hr_manager_id = fields.Many2one('res.users', string='HR Manager', readonly=True)
 
     state = fields.Selection([
         ('draft', 'Draft'),
         ('submitted', 'Submitted'),
         ('manager_approved', 'Manager Approved'),
-        ('department_approved', 'Department Approved'),
+        ('ceo_approved', 'CEO Approved'),  # تغيير من department_approved إلى ceo_approved
         ('hr_approved', 'HR Approved'),
         ('rejected', 'Rejected'),
     ], string='Status', readonly=True)
@@ -31,13 +31,13 @@ class TimesheetApprovalReport(models.Model):
 
     submitted_date = fields.Datetime(string='Submitted On', readonly=True)
     manager_approval_date = fields.Datetime(string='Manager Approved On', readonly=True)
-    department_approval_date = fields.Datetime(string='Department Head Approved On', readonly=True)
+    ceo_approval_date = fields.Datetime(string='CEO Approved On', readonly=True)  # تغيير من department_approval_date إلى ceo_approval_date
     hr_approval_date = fields.Datetime(string='HR Approved On', readonly=True)
 
     time_to_manager_approval = fields.Float(string='Time to Manager Approval (Days)', readonly=True,
                                             group_operator="avg")
-    time_to_department_approval = fields.Float(string='Time to Department Approval (Days)', readonly=True,
-                                               group_operator="avg")
+    time_to_ceo_approval = fields.Float(string='Time to CEO Approval (Days)', readonly=True,
+                                         group_operator="avg")  # تغيير من time_to_department_approval إلى time_to_ceo_approval
     time_to_hr_approval = fields.Float(string='Time to HR Approval (Days)', readonly=True, group_operator="avg")
     total_approval_time = fields.Float(string='Total Approval Time (Days)', readonly=True, group_operator="avg")
 
@@ -53,7 +53,7 @@ class TimesheetApprovalReport(models.Model):
                 t.employee_id as employee_id,
                 t.department_id as department_id,
                 t.manager_id as manager_id,
-                t.department_head_id as department_head_id,
+                t.ceo_id as ceo_id,
                 t.hr_manager_id as hr_manager_id,
                 t.state as state,
                 t.total_hours as total_hours,
@@ -61,7 +61,7 @@ class TimesheetApprovalReport(models.Model):
                 t.minimum_hours as minimum_hours,
                 t.submitted_date as submitted_date,
                 t.manager_approval_date as manager_approval_date,
-                t.department_approval_date as department_approval_date,
+                t.ceo_approval_date as ceo_approval_date,
                 t.hr_approval_date as hr_approval_date,
                 CASE 
                     WHEN t.manager_approval_date IS NOT NULL AND t.submitted_date IS NOT NULL 
@@ -69,13 +69,13 @@ class TimesheetApprovalReport(models.Model):
                     ELSE NULL 
                 END as time_to_manager_approval,
                 CASE 
-                    WHEN t.department_approval_date IS NOT NULL AND t.manager_approval_date IS NOT NULL 
-                    THEN EXTRACT(EPOCH FROM (t.department_approval_date - t.manager_approval_date))/(24*60*60) 
+                    WHEN t.ceo_approval_date IS NOT NULL AND t.manager_approval_date IS NOT NULL 
+                    THEN EXTRACT(EPOCH FROM (t.ceo_approval_date - t.manager_approval_date))/(24*60*60) 
                     ELSE NULL 
-                END as time_to_department_approval,
+                END as time_to_ceo_approval,
                 CASE 
-                    WHEN t.hr_approval_date IS NOT NULL AND t.department_approval_date IS NOT NULL 
-                    THEN EXTRACT(EPOCH FROM (t.hr_approval_date - t.department_approval_date))/(24*60*60) 
+                    WHEN t.hr_approval_date IS NOT NULL AND t.ceo_approval_date IS NOT NULL 
+                    THEN EXTRACT(EPOCH FROM (t.hr_approval_date - t.ceo_approval_date))/(24*60*60) 
                     ELSE NULL 
                 END as time_to_hr_approval,
                 CASE 
@@ -107,7 +107,7 @@ class TimesheetApprovalReport(models.Model):
                 t.employee_id,
                 t.department_id,
                 t.manager_id,
-                t.department_head_id,
+                t.ceo_id,
                 t.hr_manager_id,
                 t.state,
                 t.total_hours,
@@ -115,7 +115,7 @@ class TimesheetApprovalReport(models.Model):
                 t.minimum_hours,
                 t.submitted_date,
                 t.manager_approval_date,
-                t.department_approval_date,
+                t.ceo_approval_date,
                 t.hr_approval_date,
                 e.company_id
         """

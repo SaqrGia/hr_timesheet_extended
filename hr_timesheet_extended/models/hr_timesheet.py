@@ -9,8 +9,7 @@ class AccountAnalyticLine(models.Model):
 
     # Fields to track who approved and when
     manager_id = fields.Many2one('res.users', string='Manager', compute='_compute_manager_id', store=False)
-    department_head_id = fields.Many2one('res.users', string='Department Head', compute='_compute_department_head_id',
-                                         store=True)
+    ceo_id = fields.Many2one('res.users', string='CEO', domain=lambda self: [('groups_id', 'in', self.env.ref('hr_timesheet_extended.group_timesheet_ceo').id)])
     hr_manager_id = fields.Many2one('res.users', string='HR Manager',
                                     domain=lambda self: [('groups_id', 'in', self.env.ref('hr.group_hr_manager').id)])
 
@@ -129,14 +128,6 @@ class AccountAnalyticLine(models.Model):
                 manager_user = line.employee_id.parent_id.user_id
             line.manager_id = manager_user
 
-    @api.depends('employee_id', 'employee_id.department_id')
-    def _compute_department_head_id(self):
-        for line in self:
-            if line.employee_id and line.employee_id.department_id and line.employee_id.department_id.manager_id and line.employee_id.department_id.manager_id.user_id:
-                line.department_head_id = line.employee_id.department_id.manager_id.user_id
-            else:
-                line.department_head_id = False
-
     @api.depends('unit_amount', 'employee_id', 'date')
     def _compute_total_hours(self):
         for line in self:
@@ -190,8 +181,8 @@ class AccountAnalyticLine(models.Model):
         res = super(AccountAnalyticLine, self).action_manager_approve()
         return res
 
-    def action_department_approve(self):
-        res = super(AccountAnalyticLine, self).action_department_approve()
+    def action_ceo_approve(self):  # تغيير الطريقة من action_department_approve إلى action_ceo_approve
+        res = super(AccountAnalyticLine, self).action_ceo_approve()
         return res
 
     def action_hr_approve(self):
@@ -221,11 +212,11 @@ class AccountAnalyticLine(models.Model):
                 record.action_manager_approve()
         return True
 
-    def action_department_approve_selected(self):
-        """Department head approve multiple timesheets"""
+    def action_ceo_approve_selected(self):  # تغيير الطريقة من action_department_approve_selected إلى action_ceo_approve_selected
+        """CEO approve multiple timesheets"""
         for record in self:
-            if record.state == 'manager_approved' and self.env.user == record.department_head_id:
-                record.action_department_approve()
+            if record.state == 'manager_approved' and self.env.user.has_group('hr_timesheet_extended.group_timesheet_ceo'):
+                record.action_ceo_approve()
         return True
 
     def action_hr_approve_selected(self):
@@ -234,6 +225,6 @@ class AccountAnalyticLine(models.Model):
             raise UserError(_("Only HR managers can perform the final approval."))
 
         for record in self:
-            if record.state == 'department_approved':
+            if record.state == 'ceo_approved':  # تغيير من department_approved إلى ceo_approved
                 record.action_hr_approve()
         return True
