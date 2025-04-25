@@ -5,7 +5,8 @@
         <field name="name">account.analytic.line.grid.employee</field>
         <field name="model">account.analytic.line</field>
         <field name="arch" type="xml">
-            <grid string="Timesheets" create_inline="1" barchart_total="1" js_class="timer_timesheet_grid">
+            <grid string="Timesheets" create_inline="1" barchart_total="1" js_class="timer_timesheet_grid"
+                  form_view_id="%(timesheet_grid.hr_timesheet_line_form_grid)d" sample="1" editable="1">
                 <field name="project_id" type="row"/>
                 <field name="task_id" type="row"/>
                 <field name="date" type="col">

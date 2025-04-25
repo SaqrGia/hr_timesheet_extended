@@ -79,18 +79,19 @@ class TimesheetApprovalMixin(models.AbstractModel):
             return self.employee_id.user_id.partner_id
         return False
 
-    def _create_approval_activity(self, user, summary, note, days=2):
+    def _create_approval_activity(self, user, summary, note, days=0):
         """Create an activity for approval workflow"""
         activity_type_id = self.env.ref('mail.mail_activity_data_todo').id
+        model_id = self.env['ir.model']._get(self._name).id
 
         self.env['mail.activity'].create({
             'activity_type_id': activity_type_id,
-            'summary': summary,
+            'automated': True,
             'note': note,
             'res_id': self.id,
-            'res_model_id': self.env['ir.model']._get(self._name).id,
+            'res_model_id': model_id,
             'user_id': user.id,
-            'date_deadline': fields.Date.today() + timedelta(days=days),
+            'date_deadline': fields.Date.today(), # Make it due immediately
         })
 
     def _cancel_pending_activities(self):
@@ -106,6 +107,10 @@ class TimesheetApprovalMixin(models.AbstractModel):
         if self.state != 'draft':
             raise UserError(_("Only draft records can be submitted for approval."))
 
+        # Check if employee signature exists
+        if hasattr(self, 'employee_signature') and not self.employee_signature:
+            raise UserError(_("Please provide your signature before submitting for approval."))
+
         # Set the state to submitted
         self.write({
             'state': 'submitted',
@@ -118,7 +123,7 @@ class TimesheetApprovalMixin(models.AbstractModel):
             raise UserError(
                 _("Cannot submit for approval: No manager defined for employee %s.") % self.employee_id.name)
 
-        # Create activity for manager - هنا نضيف التعديل
+        # Create activity for manager
         manager_user = None
         if self.employee_id.timesheet_manager_id:
             manager_user = self.employee_id.timesheet_manager_id
@@ -128,17 +133,9 @@ class TimesheetApprovalMixin(models.AbstractModel):
         if manager_user:
             self._create_approval_activity(
                 manager_user,
-                _('Timesheet Approval Needed'),
+                _('Timesheet Approval Needed'), # Restore original summary
                 _('Please review and approve the timesheet submitted by %s') % self.employee_id.name
             )
-
-        # Post message
-        self.message_post(
-            body=_('Submitted for approval'),
-            message_type='notification',
-            subtype_xmlid='mail.mt_note',
-            partner_ids=[manager_partner.id]
-        )
 
     def action_manager_approve(self):
         """Manager approval action"""
@@ -148,6 +145,10 @@ class TimesheetApprovalMixin(models.AbstractModel):
         # Check if the current user is the manager
         if not self._check_manager_access():
             raise UserError(_("Only the assigned manager can approve this record."))
+            
+        # Check if manager signature exists
+        if hasattr(self, 'manager_signature') and not self.manager_signature:
+            raise UserError(_("Please provide your signature before approving."))
 
         # Mark as approved by manager
         self.write({
@@ -155,15 +156,15 @@ class TimesheetApprovalMixin(models.AbstractModel):
             'manager_approval_date': fields.Datetime.now(),
         })
 
-        # Create notification for the CEO - use try/except to handle potential errors
+        # Revert manager's activity feedback
+        self.activity_feedback(['mail.mail_activity_data_todo']) # Restore default activity type and feedback
+
+        # Create notification for the CEO
         try:
             ceo_partners = self._get_ceo_partners()
             if not ceo_partners:
-                self.message_post(
-                    body=_('Approved by manager, no CEO defined in the system.'),
-                    message_type='notification',
-                    subtype_xmlid='mail.mt_note'
-                )
+                # Don't post a message, just log the info
+                _logger.info('Approved by manager, no CEO defined in the system.')
                 return True
 
             # Create activity for CEO users
@@ -173,25 +174,12 @@ class TimesheetApprovalMixin(models.AbstractModel):
             for ceo_user in ceo_users:
                 self._create_approval_activity(
                     ceo_user,
-                    _('CEO Approval Needed'),
+                    _('CEO Approval Needed'), # Restore original summary
                     _('Please review and approve the timesheet of %s after manager approval') % self.employee_id.name
                 )
-
-            # Post message
-            self.message_post(
-                body=_('Approved by manager, awaiting CEO approval'),
-                message_type='notification',
-                subtype_xmlid='mail.mt_note',
-                partner_ids=ceo_partners.ids
-            )
         except Exception as e:
             # Log the error but don't block the approval
             _logger.error("Error notifying CEO: %s", str(e))
-            self.message_post(
-                body=_('Approved by manager. Error notifying CEO.'),
-                message_type='notification',
-                subtype_xmlid='mail.mt_note'
-            )
 
         return True
 
@@ -203,12 +191,19 @@ class TimesheetApprovalMixin(models.AbstractModel):
         # Check if the current user is a CEO
         if not self._check_ceo_access():
             raise UserError(_("Only the CEO can approve this record."))
+            
+        # Check if CEO signature exists
+        if hasattr(self, 'ceo_signature') and not self.ceo_signature:
+            raise UserError(_("Please provide your signature before approving."))
 
         # Mark as approved by CEO
         self.write({
             'state': 'ceo_approved',
             'ceo_approval_date': fields.Datetime.now(),
         })
+
+        # Revert CEO's activity feedback
+        self.activity_feedback(['mail.mail_activity_data_todo']) # Restore default activity type and feedback
 
         # Get HR managers and create notification
         hr_manager_partners = self._get_hr_manager_partners()
@@ -222,43 +217,40 @@ class TimesheetApprovalMixin(models.AbstractModel):
         for hr_manager in hr_managers:
             self._create_approval_activity(
                 hr_manager,
-                _('HR Final Approval Needed'),
-                _('Please review and give final approval for the timesheet of %s') % self.employee_id.name
-            )
-
-        # Post message
-        self.message_post(
-            body=_('Approved by CEO, awaiting HR approval'),
-            message_type='notification',
-            subtype_xmlid='mail.mt_note',
-            partner_ids=hr_manager_partners.ids
-        )
+                 _('HR Final Approval Needed'), # Restore original summary
+                 _('Please review and give final approval for the timesheet of %s') % self.employee_id.name
+             )
 
     def action_hr_approve(self):
-        """إجراء موافقة الموارد البشرية"""
+        """HR approval action"""
         if self.state != 'ceo_approved':
-            raise UserError(_("يمكن الموافقة على السجلات المعتمدة من الرئيس التنفيذي فقط من قبل الموارد البشرية."))
+            raise UserError(_("Only CEO-approved records can be approved by HR."))
 
-        # تحقق مما إذا كان المستخدم الحالي معتمد موارد بشرية
+        # Check if the current user is an HR manager
         if not self._check_hr_manager_access():
-            raise UserError(_("يمكن لمعتمدي الموارد البشرية فقط إجراء الموافقة النهائية."))
+            raise UserError(_("Only HR managers can approve this record."))
+            
+        # Check if HR signature exists
+        if hasattr(self, 'hr_signature') and not self.hr_signature:
+            raise UserError(_("Please provide your signature before approving."))
 
-        # وضع علامة معتمدة من قبل الموارد البشرية
+        # Mark as approved by HR
         self.write({
             'state': 'hr_approved',
             'hr_approval_date': fields.Datetime.now(),
         })
 
-        # إنشاء إشعار للموظف
-        employee_partner = self._get_employee_partner()
-        if employee_partner:
-            self.message_post(
-                body=_('تمت الموافقة على ورقة الوقت الخاصة بك من قبل الموارد البشرية'),
-                message_type='notification',
-                subtype_xmlid='mail.mt_note',
-                partner_ids=[employee_partner.id]
-            )
+        # Revert HR's activity feedback
+        self.activity_feedback(['mail.mail_activity_data_todo']) # Restore default activity type and feedback
 
+        # Create notification for the employee using activity instead of message
+        employee = self.employee_id
+        if employee and employee.user_id:
+            self._create_approval_activity(
+                employee.user_id,
+                _('Timesheet Approved'),
+                _('Your timesheet has been approved by HR')
+            )
 
     def action_reject(self, reason=None):
         """Reject approval action"""
@@ -273,18 +265,17 @@ class TimesheetApprovalMixin(models.AbstractModel):
             'rejected_by': self.env.user.id,
         })
 
-        # Create notification for the employee about the rejection
-        employee_partner = self._get_employee_partner()
-        if employee_partner:
-            self.message_post(
-                body=_('Your record has been rejected. Reason: %s') % (reason or _('No reason provided')),
-                message_type='notification',
-                subtype_xmlid='mail.mt_note',
-                partner_ids=[employee_partner.id]
-            )
+        # Revert rejection feedback
+        self.activity_feedback(['mail.mail_activity_data_todo']) # Restore default activity type and feedback
 
-        # Cancel existing activities
-        self._cancel_pending_activities()
+        # Create notification for the employee about the rejection
+        employee = self.employee_id
+        if employee and employee.user_id:
+            self._create_approval_activity(
+                employee.user_id,
+                _('Timesheet Rejected'),
+                _('Your timesheet has been rejected. Reason: %s') % (reason or _('No reason provided'))
+            )
 
     def action_reset_to_draft(self):
         """Reset to draft action"""

@@ -10,7 +10,39 @@
             <field name="company_id" eval="False"/>
         </record>
 
-        <!-- Activity types -->
+        <!-- Activity types for Timesheet Approval Workflow -->
+        <record id="mail_act_timesheet_manager_approval" model="mail.activity.type">
+            <field name="name">Manager Approval</field>
+            <field name="summary">Manager to approve timesheet</field>
+            <field name="category">default</field>
+            <field name="icon">fa-user</field>
+            <field name="delay_count">2</field>
+            <field name="delay_unit">days</field>
+            <field name="res_model">hr.timesheet.approval</field>
+        </record>
+
+        <record id="mail_act_timesheet_ceo_approval" model="mail.activity.type">
+            <field name="name">CEO Approval</field>
+            <field name="summary">CEO to approve timesheet</field>
+            <field name="category">default</field>
+            <field name="icon">fa-user-tie</field>
+            <field name="delay_count">2</field>
+            <field name="delay_unit">days</field>
+            <field name="res_model">hr.timesheet.approval</field>
+        </record>
+
+        <record id="mail_act_timesheet_hr_approval" model="mail.activity.type">
+            <field name="name">HR Approval</field>
+            <field name="summary">HR to approve timesheet</field>
+            <field name="category">default</field>
+            <field name="icon">fa-users</field>
+            <field name="delay_count">2</field>
+            <field name="delay_unit">days</field>
+            <field name="res_model">hr.timesheet.approval</field>
+        </record>
+
+        <!-- Remove or comment out the old generic activity type if no longer needed -->
+        <!--
         <record id="mail_activity_data_timesheet_approval" model="mail.activity.type">
             <field name="name">Timesheet Approval</field>
             <field name="summary">Timesheet requires approval</field>
@@ -20,5 +52,6 @@
             <field name="res_model">hr.timesheet.approval</field>
             <field name="icon">fa-clock-o</field>
         </record>
+        -->
     </data>
 </odoo>
