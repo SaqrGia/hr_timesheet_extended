@@ -1,9 +1,9 @@
 from odoo import models, fields, api, _
 from odoo.exceptions import UserError
-from datetime import datetime, timedelta  # Asegurarse de que datetime está importado
+from datetime import datetime, timedelta
 import logging
-_logger = logging.getLogger(__name__)
 
+_logger = logging.getLogger(__name__)
 
 
 class TimesheetApprovalMixin(models.AbstractModel):
@@ -18,7 +18,7 @@ class TimesheetApprovalMixin(models.AbstractModel):
         ('draft', 'Draft'),
         ('submitted', 'Submitted'),
         ('manager_approved', 'Manager Approved'),
-        ('ceo_approved', 'CEO Approved'),  # تغيير من department_approved إلى ceo_approved
+        ('ceo_approved', 'CEO Approved'),
         ('hr_approved', 'HR Approved'),
         ('rejected', 'Rejected'),
     ], string='Status', default='draft', tracking=True, copy=False)
@@ -26,7 +26,7 @@ class TimesheetApprovalMixin(models.AbstractModel):
     # Approval dates tracking
     submitted_date = fields.Datetime(string='Submitted On')
     manager_approval_date = fields.Datetime(string='Manager Approved On')
-    ceo_approval_date = fields.Datetime(string='CEO Approved On')  # تغيير من department_approval_date إلى ceo_approval_date
+    ceo_approval_date = fields.Datetime(string='CEO Approved On')
     hr_approval_date = fields.Datetime(string='HR Approved On')
     rejection_date = fields.Datetime(string='Rejected On')
     rejection_reason = fields.Text(string='Rejection Reason')
@@ -91,7 +91,7 @@ class TimesheetApprovalMixin(models.AbstractModel):
             'res_id': self.id,
             'res_model_id': model_id,
             'user_id': user.id,
-            'date_deadline': fields.Date.today(), # Make it due immediately
+            'date_deadline': fields.Date.today(),  # Make it due immediately
         })
 
     def _cancel_pending_activities(self):
@@ -110,6 +110,14 @@ class TimesheetApprovalMixin(models.AbstractModel):
         # Check if employee signature exists
         if hasattr(self, 'employee_signature') and not self.employee_signature:
             raise UserError(_("Please provide your signature before submitting for approval."))
+
+        # Check for validated timesheets
+        if hasattr(self, 'timesheet_line_ids'):
+            validated_lines = self.timesheet_line_ids.filtered(
+                lambda line: hasattr(line, 'validated') and line.validated)
+            if validated_lines:
+                _logger.info(
+                    "This approval contains validated timesheet entries. They will be processed but cannot be modified.")
 
         # Set the state to submitted
         self.write({
@@ -133,7 +141,7 @@ class TimesheetApprovalMixin(models.AbstractModel):
         if manager_user:
             self._create_approval_activity(
                 manager_user,
-                _('Timesheet Approval Needed'), # Restore original summary
+                _('Timesheet Approval Needed'),
                 _('Please review and approve the timesheet submitted by %s') % self.employee_id.name
             )
 
@@ -145,10 +153,17 @@ class TimesheetApprovalMixin(models.AbstractModel):
         # Check if the current user is the manager
         if not self._check_manager_access():
             raise UserError(_("Only the assigned manager can approve this record."))
-            
+
         # Check if manager signature exists
         if hasattr(self, 'manager_signature') and not self.manager_signature:
             raise UserError(_("Please provide your signature before approving."))
+
+        # تحقق من وجود سجلات timesheet محققة
+        if hasattr(self, 'timesheet_line_ids'):
+            validated_lines = self.timesheet_line_ids.filtered(
+                lambda line: hasattr(line, 'validated') and line.validated)
+            if validated_lines:
+                _logger.info("This approval contains %s validated timesheet entries", len(validated_lines))
 
         # Mark as approved by manager
         self.write({
@@ -157,7 +172,7 @@ class TimesheetApprovalMixin(models.AbstractModel):
         })
 
         # Revert manager's activity feedback
-        self.activity_feedback(['mail.mail_activity_data_todo']) # Restore default activity type and feedback
+        self.activity_feedback(['mail.mail_activity_data_todo'])
 
         # Create notification for the CEO
         try:
@@ -174,7 +189,7 @@ class TimesheetApprovalMixin(models.AbstractModel):
             for ceo_user in ceo_users:
                 self._create_approval_activity(
                     ceo_user,
-                    _('CEO Approval Needed'), # Restore original summary
+                    _('CEO Approval Needed'),
                     _('Please review and approve the timesheet of %s after manager approval') % self.employee_id.name
                 )
         except Exception as e:
@@ -191,10 +206,17 @@ class TimesheetApprovalMixin(models.AbstractModel):
         # Check if the current user is a CEO
         if not self._check_ceo_access():
             raise UserError(_("Only the CEO can approve this record."))
-            
+
         # Check if CEO signature exists
         if hasattr(self, 'ceo_signature') and not self.ceo_signature:
             raise UserError(_("Please provide your signature before approving."))
+
+        # تحقق من وجود سجلات timesheet محققة
+        if hasattr(self, 'timesheet_line_ids'):
+            validated_lines = self.timesheet_line_ids.filtered(
+                lambda line: hasattr(line, 'validated') and line.validated)
+            if validated_lines:
+                _logger.info("This approval contains %s validated timesheet entries", len(validated_lines))
 
         # Mark as approved by CEO
         self.write({
@@ -203,7 +225,7 @@ class TimesheetApprovalMixin(models.AbstractModel):
         })
 
         # Revert CEO's activity feedback
-        self.activity_feedback(['mail.mail_activity_data_todo']) # Restore default activity type and feedback
+        self.activity_feedback(['mail.mail_activity_data_todo'])
 
         # Get HR managers and create notification
         hr_manager_partners = self._get_hr_manager_partners()
@@ -217,9 +239,9 @@ class TimesheetApprovalMixin(models.AbstractModel):
         for hr_manager in hr_managers:
             self._create_approval_activity(
                 hr_manager,
-                 _('HR Final Approval Needed'), # Restore original summary
-                 _('Please review and give final approval for the timesheet of %s') % self.employee_id.name
-             )
+                _('HR Final Approval Needed'),
+                _('Please review and give final approval for the timesheet of %s') % self.employee_id.name
+            )
 
     def action_hr_approve(self):
         """HR approval action"""
@@ -229,10 +251,17 @@ class TimesheetApprovalMixin(models.AbstractModel):
         # Check if the current user is an HR manager
         if not self._check_hr_manager_access():
             raise UserError(_("Only HR managers can approve this record."))
-            
+
         # Check if HR signature exists
         if hasattr(self, 'hr_signature') and not self.hr_signature:
             raise UserError(_("Please provide your signature before approving."))
+
+        # تحقق من وجود سجلات timesheet محققة
+        if hasattr(self, 'timesheet_line_ids'):
+            validated_lines = self.timesheet_line_ids.filtered(
+                lambda line: hasattr(line, 'validated') and line.validated)
+            if validated_lines:
+                _logger.info("This approval contains %s validated timesheet entries", len(validated_lines))
 
         # Mark as approved by HR
         self.write({
@@ -241,7 +270,7 @@ class TimesheetApprovalMixin(models.AbstractModel):
         })
 
         # Revert HR's activity feedback
-        self.activity_feedback(['mail.mail_activity_data_todo']) # Restore default activity type and feedback
+        self.activity_feedback(['mail.mail_activity_data_todo'])
 
         # Create notification for the employee using activity instead of message
         employee = self.employee_id
@@ -257,6 +286,13 @@ class TimesheetApprovalMixin(models.AbstractModel):
         if self.state in ['draft', 'hr_approved']:
             raise UserError(_("Cannot reject records that are in draft or already approved by HR."))
 
+        # تحقق من وجود سجلات timesheet محققة
+        if hasattr(self, 'timesheet_line_ids'):
+            validated_lines = self.timesheet_line_ids.filtered(
+                lambda line: hasattr(line, 'validated') and line.validated)
+            if validated_lines:
+                _logger.info("This approval contains %s validated timesheet entries", len(validated_lines))
+
         # Mark as rejected
         self.write({
             'state': 'rejected',
@@ -266,7 +302,7 @@ class TimesheetApprovalMixin(models.AbstractModel):
         })
 
         # Revert rejection feedback
-        self.activity_feedback(['mail.mail_activity_data_todo']) # Restore default activity type and feedback
+        self.activity_feedback(['mail.mail_activity_data_todo'])
 
         # Create notification for the employee about the rejection
         employee = self.employee_id
@@ -282,12 +318,27 @@ class TimesheetApprovalMixin(models.AbstractModel):
         if self.state == 'hr_approved':
             raise UserError(_("Cannot reset records that are already approved by HR."))
 
+        # تحقق من وجود سجلات timesheet محققة - لا نستطيع إعادة تعيينها إلى مسودة
+        if hasattr(self, 'timesheet_line_ids'):
+            validated_lines = self.timesheet_line_ids.filtered(
+                lambda line: hasattr(line, 'validated') and line.validated)
+
+            if validated_lines and len(validated_lines) == len(self.timesheet_line_ids):
+                raise UserError(_("Cannot reset to draft: All timesheet entries are validated."))
+
+            if validated_lines:
+                # عرض تحذير للمستخدم
+                self.env.user.notify_warning(
+                    title=_("Warning"),
+                    message=_("Some timesheet entries are validated and will remain in their current state.")
+                )
+
         # Reset to draft
         self.write({
             'state': 'draft',
             'submitted_date': False,
             'manager_approval_date': False,
-            'ceo_approval_date': False,  # تغيير من department_approval_date إلى ceo_approval_date
+            'ceo_approval_date': False,
             'hr_approval_date': False,
             'rejection_date': False,
             'rejection_reason': False,

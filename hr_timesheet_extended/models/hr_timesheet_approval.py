@@ -1,6 +1,9 @@
 from odoo import models, fields, api, _
 from odoo.exceptions import UserError
-from datetime import datetime, timedelta  # Añadida la importación de datetime
+from datetime import datetime, timedelta
+import logging
+
+_logger = logging.getLogger(__name__)
 
 
 class HrTimesheetApproval(models.Model):
@@ -41,13 +44,17 @@ class HrTimesheetApproval(models.Model):
     overtime_hours = fields.Float(string='Overtime Hours', compute='_compute_overtime_hours', store=True)
     company_id = fields.Many2one('res.company', string='Company', related='employee_id.company_id', store=True)
 
+    # إضافة حقل جديد لتتبع السجلات المحققة
+    has_validated_entries = fields.Boolean(string='Has Validated Entries', compute='_compute_has_validated_entries',
+                                           store=True)
+
     # Notes and comments
     notes = fields.Text(string='Notes')
 
     # Signature fields for approval documentation
     employee_signature = fields.Binary(string='Employee Signature')
     manager_signature = fields.Binary(string='Manager Signature')
-    ceo_signature = fields.Binary(string='CEO Signature')  # تغيير من department_head_signature إلى ceo_signature
+    ceo_signature = fields.Binary(string='CEO Signature')
     hr_signature = fields.Binary(string='HR Signature')
 
     # Payroll related fields
@@ -57,6 +64,13 @@ class HrTimesheetApproval(models.Model):
     payroll_processed = fields.Boolean(string='Processed in Payroll', default=False, copy=False)
     payroll_batch_id = fields.Many2one('hr.payslip.run', string='Payroll Batch', readonly=True,
                                        copy=False)
+
+    @api.depends('timesheet_line_ids', 'timesheet_line_ids.validated')
+    def _compute_has_validated_entries(self):
+        """حساب ما إذا كان طلب الموافقة يحتوي على سجلات محققة"""
+        for approval in self:
+            approval.has_validated_entries = any(
+                line.validated for line in approval.timesheet_line_ids if hasattr(line, 'validated'))
 
     @api.depends('employee_id', 'employee_id.timesheet_manager_id', 'employee_id.parent_id',
                  'employee_id.parent_id.user_id')
@@ -80,6 +94,17 @@ class HrTimesheetApproval(models.Model):
         if not self.timesheet_line_ids:
             raise UserError(_("No timesheet records are associated with this approval request."))
 
+        # تعديل: تحديث نص للتحذير إذا كانت هناك سجلات محققة
+        context = {
+            'grid_anchor': fields.Date.today().strftime('%Y-%m-%d'),
+            'grid_range': 'week',
+            'search_default_groupby_project': True
+        }
+
+        if self.has_validated_entries:
+            # إضافة تحذير في السياق
+            context['warning_message'] = _("Some timesheet entries are validated and cannot be modified.")
+
         # Return action to open grid view
         return {
             'name': _('Timesheet Grid View'),
@@ -87,11 +112,7 @@ class HrTimesheetApproval(models.Model):
             'res_model': 'account.analytic.line',
             'view_mode': 'grid,tree,form',
             'domain': [('timesheet_approval_id', '=', self.id)],
-            'context': {
-                'grid_anchor': fields.Date.today().strftime('%Y-%m-%d'),
-                'grid_range': 'week',
-                'search_default_groupby_project': True
-            },
+            'context': context,
         }
 
     def action_generate_payroll(self):
@@ -178,18 +199,39 @@ class HrTimesheetApproval(models.Model):
     def create(self, vals):
         if vals.get('name', _('New')) == _('New'):
             vals['name'] = self.env['ir.sequence'].next_by_code('hr.timesheet.approval') or _('New')
-        return super(HrTimesheetApproval, self).create(vals)
+
+        # تحقق من وجود سجلات محققة عند الإنشاء
+        result = super(HrTimesheetApproval, self).create(vals)
+
+        if result.has_validated_entries:
+            # تسجيل هذه المعلومة وإضافة ملاحظة
+            _logger.info("Timesheet approval %s created with validated entries", result.name)
+            result.message_post(body=_("This approval contains validated timesheet entries that cannot be modified."))
+
+        return result
 
     # Override methods from the mixin to update the related timesheet lines
     def action_submit(self):
         for approval in self:
+            # إذا كانت جميع السجلات محققة، نظهر تحذيراً ولكن نسمح بالعملية
+            if approval.has_validated_entries and len(approval.timesheet_line_ids) == len(
+                    approval.timesheet_line_ids.filtered('validated')):
+                approval.message_post(body=_("Warning: All timesheet entries in this approval are validated."))
+
             res = super(HrTimesheetApproval, approval).action_submit()
 
             # Update all timesheet lines
-            approval.timesheet_line_ids.write({
-                'state': 'submitted',
-                'submitted_date': approval.submitted_date,
-            })
+            for line in approval.timesheet_line_ids:
+                if not hasattr(line, 'validated') or not line.validated:
+                    line.write({
+                        'state': 'submitted',
+                        'submitted_date': approval.submitted_date,
+                    })
+                else:
+                    # للسجلات المحققة نقوم بتحديث الحالة فقط
+                    line.write({
+                        'state': 'submitted',
+                    })
 
         return res
 
@@ -198,23 +240,36 @@ class HrTimesheetApproval(models.Model):
             res = super(HrTimesheetApproval, approval).action_manager_approve()
 
             # Update all timesheet lines
-            approval.timesheet_line_ids.write({
-                'state': 'manager_approved',
-                'manager_approval_date': approval.manager_approval_date,
-            })
+            for line in approval.timesheet_line_ids:
+                if not hasattr(line, 'validated') or not line.validated:
+                    line.write({
+                        'state': 'manager_approved',
+                        'manager_approval_date': approval.manager_approval_date,
+                    })
+                else:
+                    # للسجلات المحققة نقوم بتحديث الحالة فقط
+                    line.write({
+                        'state': 'manager_approved',
+                    })
 
         return res
 
-    def action_ceo_approve(self):  # تغيير من action_department_approve إلى action_ceo_approve
+    def action_ceo_approve(self):
         for approval in self:
             res = super(HrTimesheetApproval, approval).action_ceo_approve()
 
             # Update all timesheet lines
-            approval.timesheet_line_ids.write({
-                'state': 'ceo_approved',  # تغيير من department_approved إلى ceo_approved
-                'ceo_approval_date': approval.ceo_approval_date,
-                # تغيير من department_approval_date إلى ceo_approval_date
-            })
+            for line in approval.timesheet_line_ids:
+                if not hasattr(line, 'validated') or not line.validated:
+                    line.write({
+                        'state': 'ceo_approved',
+                        'ceo_approval_date': approval.ceo_approval_date,
+                    })
+                else:
+                    # للسجلات المحققة نقوم بتحديث الحالة فقط
+                    line.write({
+                        'state': 'ceo_approved',
+                    })
 
         return res
 
@@ -223,11 +278,19 @@ class HrTimesheetApproval(models.Model):
             res = super(HrTimesheetApproval, approval).action_hr_approve()
 
             # Update all timesheet lines
-            approval.timesheet_line_ids.write({
-                'state': 'hr_approved',
-                'hr_approval_date': approval.hr_approval_date,
-                'hr_manager_id': self.env.user.id,
-            })
+            for line in approval.timesheet_line_ids:
+                if not hasattr(line, 'validated') or not line.validated:
+                    line.write({
+                        'state': 'hr_approved',
+                        'hr_approval_date': approval.hr_approval_date,
+                        'hr_manager_id': self.env.user.id,
+                    })
+                else:
+                    # للسجلات المحققة نقوم بتحديث الحالة فقط
+                    line.write({
+                        'state': 'hr_approved',
+                        'hr_manager_id': self.env.user.id,
+                    })
 
         return res
 
@@ -236,30 +299,51 @@ class HrTimesheetApproval(models.Model):
             res = super(HrTimesheetApproval, approval).action_reject(reason)
 
             # Update all timesheet lines
-            approval.timesheet_line_ids.write({
-                'state': 'rejected',
-                'rejection_date': approval.rejection_date,
-                'rejection_reason': reason,
-                'rejected_by': self.env.user.id,
-            })
+            for line in approval.timesheet_line_ids:
+                if not hasattr(line, 'validated') or not line.validated:
+                    line.write({
+                        'state': 'rejected',
+                        'rejection_date': approval.rejection_date,
+                        'rejection_reason': reason,
+                        'rejected_by': self.env.user.id,
+                    })
+                else:
+                    # للسجلات المحققة نقوم بتحديث الحالة فقط
+                    line.write({
+                        'state': 'rejected',
+                        'rejection_reason': reason,
+                        'rejected_by': self.env.user.id,
+                    })
 
         return res
 
     def action_reset_to_draft(self):
         for approval in self:
+            # التحقق ما إذا كانت جميع السجلات محققة
+            all_validated = approval.has_validated_entries and len(approval.timesheet_line_ids) == len(
+                approval.timesheet_line_ids.filtered('validated'))
+
+            if all_validated:
+                raise UserError(_("Cannot reset to draft: All timesheet entries in this approval are validated."))
+
             res = super(HrTimesheetApproval, approval).action_reset_to_draft()
 
-            # Update all timesheet lines
-            approval.timesheet_line_ids.write({
-                'state': 'draft',
-                'submitted_date': False,
-                'manager_approval_date': False,
-                'ceo_approval_date': False,  # تغيير من department_approval_date إلى ceo_approval_date
-                'hr_approval_date': False,
-                'rejection_date': False,
-                'rejection_reason': False,
-                'rejected_by': False,
-            })
+            # Update non-validated timesheet lines only
+            for line in approval.timesheet_line_ids:
+                if not hasattr(line, 'validated') or not line.validated:
+                    line.write({
+                        'state': 'draft',
+                        'submitted_date': False,
+                        'manager_approval_date': False,
+                        'ceo_approval_date': False,
+                        'hr_approval_date': False,
+                        'rejection_date': False,
+                        'rejection_reason': False,
+                        'rejected_by': False,
+                    })
+                else:
+                    # للسجلات المحققة، نضيف ملاحظة في السجل
+                    approval.message_post(body=_("Validated timesheet entry %s cannot be reset to draft.") % line.name)
 
         return res
 

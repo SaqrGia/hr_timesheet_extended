@@ -1,6 +1,6 @@
 from odoo import models, fields, api, _
 from odoo.exceptions import UserError, ValidationError
-from datetime import datetime, timedelta  # Verificamos que datetime está importado
+from datetime import datetime, timedelta
 
 
 class AccountAnalyticLine(models.Model):
@@ -35,18 +35,30 @@ class AccountAnalyticLine(models.Model):
         if not self:
             raise UserError(_("No time records selected"))
 
-        # Comprobar si hay sطور مصدق عليها (validated)
+        # تعديل: تحديد السجلات المحققة (validated) لإظهار تحذير بدلاً من منع العملية تماماً
         validated_lines = self.filtered(lambda line: line.validated)
         if validated_lines:
-            # Mostrar los registros validados en el mensaje de error
+            # تغيير من رسالة خطأ إلى رسالة تحذير وعرضها للمستخدم
             validated_dates = ", ".join(validated_lines.mapped(lambda l: l.date.strftime('%Y-%m-%d')))
 
-            # Mostrar error
-            raise UserError(_(
-                "Cannot create approval request because the following timesheet dates are already validated: %s. "
-                "Please select only non-validated timesheet entries.") % validated_dates
-                            )
+            # أنشئ رسالة تحذير بدلاً من منع العملية
+            return {
+                'type': 'ir.actions.client',
+                'tag': 'display_notification',
+                'params': {
+                    'title': _('Warning: Validated Timesheets'),
+                    'message': _(
+                        "Some timesheet entries (%s) have been validated. These entries will be included in the "
+                        "approval process, but their values cannot be modified.") % validated_dates,
+                    'sticky': False,
+                    'type': 'warning',
+                    'next': {
+                        'type': 'ir.actions.act_window_close'
+                    }
+                }
+            }
 
+        # باقي الكود كما هو...
         # Get the employee from the first record
         employee = self[0].employee_id
         if not employee:
@@ -187,29 +199,119 @@ class AccountAnalyticLine(models.Model):
             else:
                 line.overtime_hours = 0.0
 
-    # Override methods from the mixin to update the related timesheet lines
+    # تعديل طرق الموافقة لتتعامل مع حالة validation
+
     def action_submit(self):
-        res = super(AccountAnalyticLine, self).action_submit()
+        # إضافة فحص للسجلات المحققة
+        validated_records = self.filtered(lambda r: r.validated)
+        non_validated_records = self - validated_records
+
+        # معالجة السجلات غير المحققة بشكل طبيعي
+        res = super(AccountAnalyticLine, non_validated_records).action_submit() if non_validated_records else True
+
+        # تعيين حالة السجلات المحققة مباشرة دون استدعاء السوبر
+        if validated_records:
+            validated_records.write({
+                'state': 'submitted',
+                'submitted_date': fields.Datetime.now(),
+            })
+
         return res
 
     def action_manager_approve(self):
-        res = super(AccountAnalyticLine, self).action_manager_approve()
+        # إضافة فحص للسجلات المحققة
+        validated_records = self.filtered(lambda r: r.validated)
+        non_validated_records = self - validated_records
+
+        # معالجة السجلات غير المحققة بشكل طبيعي
+        res = super(AccountAnalyticLine,
+                    non_validated_records).action_manager_approve() if non_validated_records else True
+
+        # تعيين حالة السجلات المحققة مباشرة دون استدعاء السوبر
+        if validated_records:
+            validated_records.write({
+                'state': 'manager_approved',
+                'manager_approval_date': fields.Datetime.now(),
+            })
+
         return res
 
-    def action_ceo_approve(self):  # تغيير الطريقة من action_department_approve إلى action_ceo_approve
-        res = super(AccountAnalyticLine, self).action_ceo_approve()
+    def action_ceo_approve(self):
+        # إضافة فحص للسجلات المحققة
+        validated_records = self.filtered(lambda r: r.validated)
+        non_validated_records = self - validated_records
+
+        # معالجة السجلات غير المحققة بشكل طبيعي
+        res = super(AccountAnalyticLine, non_validated_records).action_ceo_approve() if non_validated_records else True
+
+        # تعيين حالة السجلات المحققة مباشرة دون استدعاء السوبر
+        if validated_records:
+            validated_records.write({
+                'state': 'ceo_approved',
+                'ceo_approval_date': fields.Datetime.now(),
+            })
+
         return res
 
     def action_hr_approve(self):
-        res = super(AccountAnalyticLine, self).action_hr_approve()
+        # إضافة فحص للسجلات المحققة
+        validated_records = self.filtered(lambda r: r.validated)
+        non_validated_records = self - validated_records
+
+        # معالجة السجلات غير المحققة بشكل طبيعي
+        res = super(AccountAnalyticLine, non_validated_records).action_hr_approve() if non_validated_records else True
+
+        # تعيين حالة السجلات المحققة مباشرة دون استدعاء السوبر
+        if validated_records:
+            validated_records.write({
+                'state': 'hr_approved',
+                'hr_approval_date': fields.Datetime.now(),
+            })
+
         return res
 
     def action_reject(self, reason=None):
-        res = super(AccountAnalyticLine, self).action_reject(reason)
+        # إضافة فحص للسجلات المحققة
+        validated_records = self.filtered(lambda r: r.validated)
+        non_validated_records = self - validated_records
+
+        # معالجة السجلات غير المحققة بشكل طبيعي
+        res = super(AccountAnalyticLine, non_validated_records).action_reject(reason) if non_validated_records else True
+
+        # تعيين حالة السجلات المحققة مباشرة دون استدعاء السوبر (مع الحفاظ على خاصية validated=True)
+        if validated_records:
+            validated_records.write({
+                'state': 'rejected',
+                'rejection_date': fields.Datetime.now(),
+                'rejection_reason': reason,
+                'rejected_by': self.env.user.id,
+            })
+
         return res
 
     def action_reset_to_draft(self):
-        res = super(AccountAnalyticLine, self).action_reset_to_draft()
+        # إضافة فحص للسجلات المحققة
+        validated_records = self.filtered(lambda r: r.validated)
+        non_validated_records = self - validated_records
+
+        # معالجة السجلات غير المحققة بشكل طبيعي
+        res = super(AccountAnalyticLine,
+                    non_validated_records).action_reset_to_draft() if non_validated_records else True
+
+        # إظهار تحذير إذا كانت هناك سجلات محققة محاولة إعادتها إلى المسودة
+        if validated_records:
+            return {
+                'type': 'ir.actions.client',
+                'tag': 'display_notification',
+                'params': {
+                    'title': _('Warning'),
+                    'message': _('Some timesheet entries are validated and cannot be reset to draft. '
+                                 'Only non-validated entries have been reset.'),
+                    'sticky': False,
+                    'type': 'warning',
+                }
+            }
+
         return res
 
     # Allow for batch approval actions from the grid view
@@ -227,8 +329,7 @@ class AccountAnalyticLine(models.Model):
                 record.action_manager_approve()
         return True
 
-    def action_ceo_approve_selected(
-            self):  # تغيير الطريقة من action_department_approve_selected إلى action_ceo_approve_selected
+    def action_ceo_approve_selected(self):
         """CEO approve multiple timesheets"""
         for record in self:
             if record.state == 'manager_approved' and self.env.user.has_group(

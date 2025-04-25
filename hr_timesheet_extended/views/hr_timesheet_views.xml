@@ -7,6 +7,8 @@
         <field name="inherit_id" ref="hr_timesheet.hr_timesheet_line_tree"/>
         <field name="arch" type="xml">
             <xpath expr="//field[@name='unit_amount']" position="after">
+                <!-- إضافة حقل validated للعرض -->
+                <field name="validated" invisible="1"/>
                 <field name="state" widget="badge"
                        decoration-info="state == 'draft'"
                        decoration-success="state == 'hr_approved'"
@@ -21,6 +23,8 @@
                 <attribute name="decoration-info">state == 'submitted'</attribute>
                 <attribute name="decoration-warning">state in ['manager_approved', 'ceo_approved']</attribute>
                 <attribute name="decoration-danger">state == 'rejected'</attribute>
+                <!-- إضافة decoration للسجلات المحققة -->
+                <attribute name="decoration-it">validated</attribute>
             </xpath>
 
             <!-- Add footer with totals -->

@@ -58,6 +58,15 @@
                            statusbar_visible="draft,submitted,manager_approved,ceo_approved,hr_approved"/>
                 </header>
                 <sheet>
+                    <!-- إضافة تنبيه للسجلات المحققة - استخدام invisible بدلاً من attrs -->
+                    <field name="has_validated_entries" invisible="1"/>
+                    <div class="alert alert-warning" role="alert" invisible="not has_validated_entries">
+                        <strong>Warning:</strong>
+                        This approval contains validated timesheet entries that cannot be modified.
+                        These entries will be processed in the approval workflow, but their values will remain
+                        unchanged.
+                    </div>
+
                     <div class="oe_button_box" name="button_box">
                         <button name="%(action_view_timesheet_grid_from_approval)d" type="action"
                                 class="oe_stat_button" icon="fa-th">
@@ -103,7 +112,9 @@
                                       decoration-info="state == 'submitted'"
                                       decoration-warning="state in ['manager_approved', 'ceo_approved']"
                                       decoration-success="state == 'hr_approved'"
-                                      decoration-danger="state == 'rejected'">
+                                      decoration-danger="state == 'rejected'"
+                                      decoration-it="validated">
+                                    <field name="validated" invisible="1"/>
                                     <field name="date"/>
                                     <field name="project_id"/>
                                     <field name="task_id" domain="[('project_id', '=', project_id)]"/>
@@ -118,22 +129,25 @@
                                 </tree>
                             </field>
                         </page>
+
+                        <!-- صفحة معلومات الموافقة -->
                         <page string="Approval Information" name="approval_information">
                             <group>
                                 <group string="Approval Dates" invisible="state == 'draft'">
-                                    <field name="submitted_date" readonly="1" invisible="submitted_date == False"/>
+                                    <field name="submitted_date" readonly="1" invisible="not submitted_date"/>
                                     <field name="manager_approval_date" readonly="1"
-                                           invisible="manager_approval_date == False"/>
+                                           invisible="not manager_approval_date"/>
                                     <field name="ceo_approval_date" readonly="1"
-                                           invisible="ceo_approval_date == False"/>
-                                    <field name="hr_approval_date" readonly="1" invisible="hr_approval_date == False"/>
+                                           invisible="not ceo_approval_date"/>
+                                    <field name="hr_approval_date" readonly="1" invisible="not hr_approval_date"/>
                                 </group>
                                 <group string="HR Approval">
-                                    <field name="hr_manager_id" readonly="1" invisible="hr_manager_id == False"/>
+                                    <field name="hr_manager_id" readonly="1" invisible="not hr_manager_id"/>
                                     <field name="notes" readonly="state in ['hr_approved', 'rejected']"/>
                                 </group>
                             </group>
                         </page>
+
                         <page string="Summary" name="summary">
                             <div class="row">
                                 <div class="col-md-6">
@@ -213,28 +227,30 @@
                             </div>
                         </page>
                         <page string="Payroll Information" name="payroll_information">
-                            <attribute name="invisible" eval="not payroll_processed"/>
                             <group>
-                                <group string="Payroll Status">
-                                    <field name="payroll_processed"/>
-                                    <field name="work_entry_type_id" readonly="1"/>
-                                    <field name="payslip_id" readonly="1"/>
-                                    <field name="payroll_batch_id" readonly="1"/>
-                                </group>
-                                <group string="Actions" groups="hr_payroll.group_hr_payroll_manager">
-                                    <button name="%(action_hr_timesheet_to_payroll_wizard)d"
-                                            type="action"
-                                            string="Generate Payroll Entries"
-                                            class="btn btn-primary">
-                                        <attribute name="invisible" eval="state != 'hr_approved' or payroll_processed"/>
-                                    </button>
-                                    <button name="action_view_payslip"
-                                            type="object"
-                                            string="View Payslip"
-                                            class="btn btn-secondary">
-                                        <attribute name="invisible" eval="not payslip_id"/>
-                                    </button>
-                                </group>
+                                <field name="payroll_processed" invisible="1"/>
+                                <div invisible="not payroll_processed">
+                                    <group>
+                                        <group string="Payroll Status">
+                                            <field name="payroll_processed"/>
+                                            <field name="work_entry_type_id" readonly="1"/>
+                                            <field name="payslip_id" readonly="1"/>
+                                            <field name="payroll_batch_id" readonly="1"/>
+                                        </group>
+                                        <group string="Actions" groups="hr_payroll.group_hr_payroll_manager">
+                                            <button name="%(action_hr_timesheet_to_payroll_wizard)d"
+                                                    type="action"
+                                                    string="Generate Payroll Entries"
+                                                    class="btn btn-primary"
+                                                    invisible="state != 'hr_approved' or payroll_processed"/>
+                                            <button name="action_view_payslip"
+                                                    type="object"
+                                                    string="View Payslip"
+                                                    class="btn btn-secondary"
+                                                    invisible="not payslip_id"/>
+                                        </group>
+                                    </group>
+                                </div>
                             </group>
                         </page>
                     </notebook>
@@ -270,6 +286,7 @@
                 <field name="date_end"/>
                 <field name="total_hours" widget="float_time" sum="Total Hours"/>
                 <field name="overtime_hours" widget="float_time" sum="Total Overtime"/>
+                <field name="has_validated_entries" invisible="1"/>
                 <field name="state" widget="badge"
                        decoration-info="state == 'draft'"
                        decoration-success="state == 'hr_approved'"
@@ -304,6 +321,9 @@
                         domain="[('state', '=', 'ceo_approved')]"/>
                 <filter string="HR Approved" name="hr_approved" domain="[('state', '=', 'hr_approved')]"/>
                 <filter string="Rejected" name="rejected" domain="[('state', '=', 'rejected')]"/>
+                <!-- إضافة فلتر للسجلات المحققة -->
+                <filter string="Has Validated Entries" name="has_validated_entries"
+                        domain="[('has_validated_entries', '=', True)]"/>
                 <separator/>
                 <filter string="To Approve" name="to_approve"
                         domain="['|', '|',
@@ -331,6 +351,8 @@
                     <filter string="Payroll Batch" name="payroll_batch" context="{'group_by': 'payroll_batch_id'}"/>
                     <filter string="Work Entry Type" name="work_entry_type"
                             context="{'group_by': 'work_entry_type_id'}"/>
+                    <filter string="Has Validated Entries" name="group_validated"
+                            context="{'group_by': 'has_validated_entries'}"/>
                 </group>
             </search>
         </field>
@@ -440,7 +462,8 @@
               sequence="20"/>
 
     <menuitem id="menu_all_timesheet_approvals" name="All Timesheet Approvals"
-          parent="menu_timesheet_approval_root"
-          action="action_hr_timesheet_approval"
-          sequence="30" groups="hr_timesheet_extended.group_timesheet_ceo,hr_timesheet_extended.group_timesheet_hr_approve"/>
+              parent="menu_timesheet_approval_root"
+              action="action_hr_timesheet_approval"
+              sequence="30"
+              groups="hr_timesheet_extended.group_timesheet_ceo,hr_timesheet_extended.group_timesheet_hr_approve"/>
 </odoo>
