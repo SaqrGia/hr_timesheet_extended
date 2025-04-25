@@ -9,8 +9,8 @@
         <field name="domain">[('timesheet_approval_id', '=', active_id)]</field>
         <field name="context">{
             'grid_anchor': context_today().strftime('%Y-%m-%d'),
-            'grid_range': 'week',
-            'search_default_groupby_project': True
+            'grid_range': 'week'
+
             }
         </field>
         <field name="view_id" ref="hr_timesheet_extended.view_timesheet_grid_employee"/>
@@ -112,9 +112,8 @@
                                       decoration-info="state == 'submitted'"
                                       decoration-warning="state in ['manager_approved', 'ceo_approved']"
                                       decoration-success="state == 'hr_approved'"
-                                      decoration-danger="state == 'rejected'"
-                                      decoration-it="validated">
-                                    <field name="validated" invisible="1"/>
+                                      decoration-danger="state == 'rejected'">
+
                                     <field name="date"/>
                                     <field name="project_id"/>
                                     <field name="task_id" domain="[('project_id', '=', project_id)]"/>
@@ -141,7 +140,7 @@
                                            invisible="not ceo_approval_date"/>
                                     <field name="hr_approval_date" readonly="1" invisible="not hr_approval_date"/>
                                 </group>
-                                <group string="HR Approval">
+                                <group string="CEO Approval">
                                     <field name="hr_manager_id" readonly="1" invisible="not hr_manager_id"/>
                                     <field name="notes" readonly="state in ['hr_approved', 'rejected']"/>
                                 </group>
@@ -227,30 +226,14 @@
                             </div>
                         </page>
                         <page string="Payroll Information" name="payroll_information">
+                            <attribute name="invisible" eval="not payroll_processed"/>
                             <group>
-                                <field name="payroll_processed" invisible="1"/>
-                                <div invisible="not payroll_processed">
-                                    <group>
-                                        <group string="Payroll Status">
-                                            <field name="payroll_processed"/>
-                                            <field name="work_entry_type_id" readonly="1"/>
-                                            <field name="payslip_id" readonly="1"/>
-                                            <field name="payroll_batch_id" readonly="1"/>
-                                        </group>
-                                        <group string="Actions" groups="hr_payroll.group_hr_payroll_manager">
-                                            <button name="%(action_hr_timesheet_to_payroll_wizard)d"
-                                                    type="action"
-                                                    string="Generate Payroll Entries"
-                                                    class="btn btn-primary"
-                                                    invisible="state != 'hr_approved' or payroll_processed"/>
-                                            <button name="action_view_payslip"
-                                                    type="object"
-                                                    string="View Payslip"
-                                                    class="btn btn-secondary"
-                                                    invisible="not payslip_id"/>
-                                        </group>
-                                    </group>
-                                </div>
+                                <group string="Payroll Status">
+                                    <field name="payroll_processed" readonly="1"/>
+                                    <field name="work_entry_type_id" readonly="1"/>
+                                    <field name="payslip_id" readonly="1"/>
+                                    <field name="payroll_batch_id" readonly="1"/>
+                                </group>
                             </group>
                         </page>
                     </notebook>
@@ -286,15 +269,13 @@
                 <field name="date_end"/>
                 <field name="total_hours" widget="float_time" sum="Total Hours"/>
                 <field name="overtime_hours" widget="float_time" sum="Total Overtime"/>
-                <field name="has_validated_entries" invisible="1"/>
                 <field name="state" widget="badge"
                        decoration-info="state == 'draft'"
                        decoration-success="state == 'hr_approved'"
                        decoration-primary="state == 'submitted'"
                        decoration-warning="state in ['manager_approved', 'ceo_approved']"
                        decoration-danger="state == 'rejected'"/>
-                <field name="payroll_processed" invisible="1"/>
-                <field name="payslip_id" invisible="1"/>
+
             </tree>
         </field>
     </record>

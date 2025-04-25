@@ -198,10 +198,9 @@ class HrTimesheetToPayrollWizard(models.TransientModel):
         """Get or create the 'End to End Sprints' work entry type"""
         WorkEntryType = self.env['hr.work.entry.type']
 
-        # Search for existing work entry type
+        # البحث فقط بواسطة الرمز وليس الاسم
         work_entry_type = WorkEntryType.search([
-            ('code', '=', 'E2E'),
-            ('name', '=', 'End to End Sprints')
+            ('code', '=', 'E2E')
         ], limit=1)
 
         if not work_entry_type:
@@ -213,7 +212,6 @@ class HrTimesheetToPayrollWizard(models.TransientModel):
                 'is_leave': False,
                 'round_days': 'NO',
                 'round_days_type': 'DOWN',
-                'is_paid': True,
             })
 
         return work_entry_type
