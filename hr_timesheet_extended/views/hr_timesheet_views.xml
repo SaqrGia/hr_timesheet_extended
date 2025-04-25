@@ -11,7 +11,7 @@
                        decoration-info="state == 'draft'"
                        decoration-success="state == 'hr_approved'"
                        decoration-primary="state == 'submitted'"
-                       decoration-warning="state in ['manager_approved', 'department_approved']"
+                       decoration-warning="state in ['manager_approved', 'ceo_approved']"
                        decoration-danger="state == 'rejected'"/>
             </xpath>
 
@@ -19,7 +19,7 @@
                 <attribute name="decoration-muted">state == 'draft'</attribute>
                 <attribute name="decoration-success">state == 'hr_approved'</attribute>
                 <attribute name="decoration-info">state == 'submitted'</attribute>
-                <attribute name="decoration-warning">state in ['manager_approved', 'department_approved']</attribute>
+                <attribute name="decoration-warning">state in ['manager_approved', 'ceo_approved']</attribute>
                 <attribute name="decoration-danger">state == 'rejected'</attribute>
             </xpath>
 
@@ -37,11 +37,11 @@
         <field name="res_model">account.analytic.line</field>
         <field name="view_mode">grid,tree,form,pivot,graph</field>
         <field name="view_id" ref="hr_timesheet_extended.view_timesheet_grid_employee"/>
-        <field name="domain">[('project_id', '!=', False), ('user_id', '=', user.id)]</field>
+        <field name="domain">[('project_id', '!=', False), ('user_id', '=', uid)]</field>
         <field name="context">{
             'grid_anchor': context_today().strftime('%Y-%m-%d'),
             'grid_range': 'week',
-            'default_employee_id': [('user_id', '=', user.id)],
+            'default_employee_id': [('user_id', '=', uid)],
             'search_default_my_timesheet': 1,
             'default_is_timesheet': 1
             }

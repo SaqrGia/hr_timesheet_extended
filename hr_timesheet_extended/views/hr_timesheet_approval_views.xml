@@ -42,7 +42,7 @@
                     <button name="action_hr_approve" string="Approve (HR)" type="object"
                             class="oe_highlight"
                             invisible="state != 'ceo_approved'"
-                            groups="hr.group_hr_manager"/>
+                            groups="hr_timesheet_extended.group_timesheet_hr_approve"/>
 
                     <!-- Reject button - not visible for draft, hr_approved, or rejected states -->
                     <button name="action_reject" string="Reject" type="object"
@@ -200,11 +200,11 @@
                                                     <!-- Firma de RRHH - Editable solo para managers de RRHH cuando el estado es ceo_approved -->
                                                     <field name="hr_signature" widget="signature"
                                                            readonly="state != 'ceo_approved'"
-                                                           groups="hr.group_hr_manager"/>
+                                                           groups="hr_timesheet_extended.group_timesheet_hr_approve"/>
                                                     <!-- Versión de solo lectura para los demás usuarios -->
                                                     <field name="hr_signature" widget="signature"
                                                            readonly="1"
-                                                           groups="!hr.group_hr_manager"/>
+                                                           groups="!hr_timesheet_extended.group_timesheet_hr_approve"/>
                                                 </div>
                                             </div>
                                         </div>
@@ -440,7 +440,7 @@
               sequence="20"/>
 
     <menuitem id="menu_all_timesheet_approvals" name="All Timesheet Approvals"
-              parent="menu_timesheet_approval_root"
-              action="action_hr_timesheet_approval"
-              sequence="30" groups="hr.group_hr_manager,hr_timesheet_extended.group_timesheet_ceo"/>
+          parent="menu_timesheet_approval_root"
+          action="action_hr_timesheet_approval"
+          sequence="30" groups="hr_timesheet_extended.group_timesheet_ceo,hr_timesheet_extended.group_timesheet_hr_approve"/>
 </odoo>

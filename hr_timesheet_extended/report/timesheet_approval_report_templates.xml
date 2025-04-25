@@ -79,11 +79,11 @@
 
     <!-- Add report to menu -->
     <menuitem id="menu_timesheet_approval_report"
-              name="Timesheet Approval Analysis"
-              parent="hr_timesheet.menu_timesheets_reports"
-              action="action_timesheet_approval_report"
-              sequence="30"
-              groups="hr_timesheet.group_hr_timesheet_user,hr.group_hr_manager,hr_timesheet_extended.group_timesheet_ceo"/>
+          name="Timesheet Approval Analysis"
+          parent="hr_timesheet.menu_timesheets_reports"
+          action="action_timesheet_approval_report"
+          sequence="30"
+          groups="hr_timesheet.group_hr_timesheet_user,hr_timesheet_extended.group_timesheet_hr_approve,hr_timesheet_extended.group_timesheet_ceo"/>
 
     <!-- Print Timesheet Approval Form Template -->
     <template id="report_timesheet_approval_document">

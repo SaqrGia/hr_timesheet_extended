@@ -19,11 +19,18 @@ class HrTimesheetApproval(models.Model):
     date_end = fields.Date(string='End Date', required=True, tracking=True)
 
     # Approval related fields (inherited from mixin but we redefine for clarity)
-    manager_id = fields.Many2one('res.users', string='Manager', related='employee_id.parent_id.user_id', store=True)
+    manager_id = fields.Many2one(
+        'res.users',
+        string='Manager',
+        compute='_compute_manager_id',
+        store=True,
+        compute_sudo=True)
     ceo_id = fields.Many2one('res.users', string='CEO',
-                             domain=lambda self: [('groups_id', 'in', self.env.ref('hr_timesheet_extended.group_timesheet_ceo').id)])
+                             domain=lambda self: [
+                                 ('groups_id', 'in', self.env.ref('hr_timesheet_extended.group_timesheet_ceo').id)])
     hr_manager_id = fields.Many2one('res.users', string='HR Manager',
-                                    domain=lambda self: [('groups_id', 'in', self.env.ref('hr.group_hr_manager').id)])
+                                    domain=lambda self: [('groups_id', 'in', self.env.ref(
+                                        'hr_timesheet_extended.group_timesheet_hr_approve').id)])
 
     # Timesheet lines
     timesheet_line_ids = fields.One2many('account.analytic.line', 'timesheet_approval_id', string='Timesheet Lines')
@@ -50,6 +57,18 @@ class HrTimesheetApproval(models.Model):
     payroll_processed = fields.Boolean(string='Processed in Payroll', default=False, copy=False)
     payroll_batch_id = fields.Many2one('hr.payslip.run', string='Payroll Batch', readonly=True,
                                        copy=False)
+
+    @api.depends('employee_id', 'employee_id.timesheet_manager_id', 'employee_id.parent_id',
+                 'employee_id.parent_id.user_id')
+    def _compute_manager_id(self):
+        for approval in self:
+            manager_user = False
+            if approval.employee_id:
+                if approval.employee_id.timesheet_manager_id:
+                    manager_user = approval.employee_id.timesheet_manager_id
+                elif approval.employee_id.parent_id and approval.employee_id.parent_id.user_id:
+                    manager_user = approval.employee_id.parent_id.user_id
+            approval.manager_id = manager_user
 
     def action_view_timesheet_grid(self):
         """
@@ -193,7 +212,8 @@ class HrTimesheetApproval(models.Model):
             # Update all timesheet lines
             approval.timesheet_line_ids.write({
                 'state': 'ceo_approved',  # تغيير من department_approved إلى ceo_approved
-                'ceo_approval_date': approval.ceo_approval_date,  # تغيير من department_approval_date إلى ceo_approval_date
+                'ceo_approval_date': approval.ceo_approval_date,
+                # تغيير من department_approval_date إلى ceo_approval_date
             })
 
         return res

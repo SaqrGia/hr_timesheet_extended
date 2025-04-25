@@ -9,9 +9,11 @@ class AccountAnalyticLine(models.Model):
 
     # Fields to track who approved and when
     manager_id = fields.Many2one('res.users', string='Manager', compute='_compute_manager_id', store=False)
-    ceo_id = fields.Many2one('res.users', string='CEO', domain=lambda self: [('groups_id', 'in', self.env.ref('hr_timesheet_extended.group_timesheet_ceo').id)])
+    ceo_id = fields.Many2one('res.users', string='CEO', domain=lambda self: [
+        ('groups_id', 'in', self.env.ref('hr_timesheet_extended.group_timesheet_ceo').id)])
     hr_manager_id = fields.Many2one('res.users', string='HR Manager',
-                                    domain=lambda self: [('groups_id', 'in', self.env.ref('hr.group_hr_manager').id)])
+                                    domain=lambda self: [('groups_id', 'in', self.env.ref(
+                                        'hr_timesheet_extended.group_timesheet_hr_approve').id)])
 
     # Computed fields for totals (will be displayed in the footer)
     total_hours = fields.Float(string='Total Hours', compute='_compute_total_hours', store=True, compute_sudo=True,
@@ -32,6 +34,18 @@ class AccountAnalyticLine(models.Model):
         # This function is called from a button, it does not need ensure_one()
         if not self:
             raise UserError(_("No time records selected"))
+
+        # Comprobar si hay sطور مصدق عليها (validated)
+        validated_lines = self.filtered(lambda line: line.validated)
+        if validated_lines:
+            # Mostrar los registros validados en el mensaje de error
+            validated_dates = ", ".join(validated_lines.mapped(lambda l: l.date.strftime('%Y-%m-%d')))
+
+            # Mostrar error
+            raise UserError(_(
+                "Cannot create approval request because the following timesheet dates are already validated: %s. "
+                "Please select only non-validated timesheet entries.") % validated_dates
+                            )
 
         # Get the employee from the first record
         employee = self[0].employee_id
@@ -118,14 +132,15 @@ class AccountAnalyticLine(models.Model):
             'target': 'current',
         }
 
-
-
     @api.depends('employee_id')
     def _compute_manager_id(self):
         for line in self:
             manager_user = False
-            if line.employee_id and line.employee_id.parent_id:
-                manager_user = line.employee_id.parent_id.user_id
+            if line.employee_id:
+                if line.employee_id.timesheet_manager_id:
+                    manager_user = line.employee_id.timesheet_manager_id
+                elif line.employee_id.parent_id:
+                    manager_user = line.employee_id.parent_id.user_id
             line.manager_id = manager_user
 
     @api.depends('unit_amount', 'employee_id', 'date')
@@ -212,19 +227,21 @@ class AccountAnalyticLine(models.Model):
                 record.action_manager_approve()
         return True
 
-    def action_ceo_approve_selected(self):  # تغيير الطريقة من action_department_approve_selected إلى action_ceo_approve_selected
+    def action_ceo_approve_selected(
+            self):  # تغيير الطريقة من action_department_approve_selected إلى action_ceo_approve_selected
         """CEO approve multiple timesheets"""
         for record in self:
-            if record.state == 'manager_approved' and self.env.user.has_group('hr_timesheet_extended.group_timesheet_ceo'):
+            if record.state == 'manager_approved' and self.env.user.has_group(
+                    'hr_timesheet_extended.group_timesheet_ceo'):
                 record.action_ceo_approve()
         return True
 
     def action_hr_approve_selected(self):
-        """HR approve multiple timesheets"""
-        if not self.env.user.has_group('hr.group_hr_manager'):
-            raise UserError(_("Only HR managers can perform the final approval."))
+        """موافقة الموارد البشرية على أوراق وقت متعددة"""
+        if not self.env.user.has_group('hr_timesheet_extended.group_timesheet_hr_approve'):
+            raise UserError(_("يمكن لمعتمدي الموارد البشرية فقط إجراء الموافقة النهائية."))
 
         for record in self:
-            if record.state == 'ceo_approved':  # تغيير من department_approved إلى ceo_approved
+            if record.state == 'ceo_approved':
                 record.action_hr_approve()
         return True

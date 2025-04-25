@@ -33,23 +33,28 @@ class TimesheetApprovalMixin(models.AbstractModel):
     rejected_by = fields.Many2one('res.users', string='Rejected By')
 
     def _check_manager_access(self):
-        """Check if current user is manager of the employee"""
         self.ensure_one()
         employee = self.employee_id
-        return self.env.user == employee.parent_id.user_id
+
+        if employee.timesheet_manager_id:
+            return self.env.user == employee.timesheet_manager_id
+        elif employee.parent_id and employee.parent_id.user_id:
+            return self.env.user == employee.parent_id.user_id
+        return False
 
     def _check_ceo_access(self):
         """Check if current user is CEO"""
-        return self.env.user.has_group('hr_timesheet_extended.group_timesheet_ceo')  # تحقق من مجموعة CEO الجديدة
+        return self.env.user.has_group('hr_timesheet_extended.group_timesheet_ceo')
 
     def _check_hr_manager_access(self):
         """Check if current user is HR manager"""
-        return self.env.user.has_group('hr.group_hr_manager')
+        return self.env.user.has_group('hr_timesheet_extended.group_timesheet_hr_approve')
 
     def _get_manager_partner(self):
-        """Get manager partner for notifications"""
         self.ensure_one()
-        if self.employee_id.parent_id and self.employee_id.parent_id.user_id:
+        if self.employee_id.timesheet_manager_id:
+            return self.employee_id.timesheet_manager_id.partner_id
+        elif self.employee_id.parent_id and self.employee_id.parent_id.user_id:
             return self.employee_id.parent_id.user_id.partner_id
         return False
 
@@ -61,11 +66,11 @@ class TimesheetApprovalMixin(models.AbstractModel):
         return ceo_users.mapped('partner_id')
 
     def _get_hr_manager_partners(self):
-        """Get HR manager partners for notifications"""
-        hr_managers = self.env['res.users'].search([
-            ('groups_id', 'in', self.env.ref('hr.group_hr_manager').id)
+        """الحصول على شركاء معتمدي الموارد البشرية للإشعارات"""
+        hr_approvers = self.env['res.users'].search([
+            ('groups_id', 'in', self.env.ref('hr_timesheet_extended.group_timesheet_hr_approve').id)
         ])
-        return hr_managers.mapped('partner_id')
+        return hr_approvers.mapped('partner_id')
 
     def _get_employee_partner(self):
         """Get employee partner for notifications"""
@@ -113,10 +118,16 @@ class TimesheetApprovalMixin(models.AbstractModel):
             raise UserError(
                 _("Cannot submit for approval: No manager defined for employee %s.") % self.employee_id.name)
 
-        # Create activity for manager
-        if hasattr(self, 'employee_id') and self.employee_id.parent_id.user_id:
+        # Create activity for manager - هنا نضيف التعديل
+        manager_user = None
+        if self.employee_id.timesheet_manager_id:
+            manager_user = self.employee_id.timesheet_manager_id
+        elif hasattr(self, 'employee_id') and self.employee_id.parent_id and self.employee_id.parent_id.user_id:
+            manager_user = self.employee_id.parent_id.user_id
+
+        if manager_user:
             self._create_approval_activity(
-                self.employee_id.parent_id.user_id,
+                manager_user,
                 _('Timesheet Approval Needed'),
                 _('Please review and approve the timesheet submitted by %s') % self.employee_id.name
             )
@@ -206,7 +217,7 @@ class TimesheetApprovalMixin(models.AbstractModel):
 
         # Create activity for HR managers
         hr_managers = self.env['res.users'].search([
-            ('groups_id', 'in', self.env.ref('hr.group_hr_manager').id)
+            ('groups_id', 'in', self.env.ref('hr_timesheet_extended.group_timesheet_hr_approve').id)
         ])
         for hr_manager in hr_managers:
             self._create_approval_activity(
@@ -224,29 +235,30 @@ class TimesheetApprovalMixin(models.AbstractModel):
         )
 
     def action_hr_approve(self):
-        """HR approval action"""
-        if self.state != 'ceo_approved':  # تغيير من department_approved إلى ceo_approved
-            raise UserError(_("Only CEO-approved records can be approved by HR."))
+        """إجراء موافقة الموارد البشرية"""
+        if self.state != 'ceo_approved':
+            raise UserError(_("يمكن الموافقة على السجلات المعتمدة من الرئيس التنفيذي فقط من قبل الموارد البشرية."))
 
-        # Check if the current user is an HR manager
+        # تحقق مما إذا كان المستخدم الحالي معتمد موارد بشرية
         if not self._check_hr_manager_access():
-            raise UserError(_("Only HR managers can perform the final approval."))
+            raise UserError(_("يمكن لمعتمدي الموارد البشرية فقط إجراء الموافقة النهائية."))
 
-        # Mark as approved by HR
+        # وضع علامة معتمدة من قبل الموارد البشرية
         self.write({
             'state': 'hr_approved',
             'hr_approval_date': fields.Datetime.now(),
         })
 
-        # Create notification for the employee
+        # إنشاء إشعار للموظف
         employee_partner = self._get_employee_partner()
         if employee_partner:
             self.message_post(
-                body=_('Your timesheet has been approved by HR'),
+                body=_('تمت الموافقة على ورقة الوقت الخاصة بك من قبل الموارد البشرية'),
                 message_type='notification',
                 subtype_xmlid='mail.mt_note',
                 partner_ids=[employee_partner.id]
             )
+
 
     def action_reject(self, reason=None):
         """Reject approval action"""
