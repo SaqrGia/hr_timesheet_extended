@@ -45,7 +45,6 @@
         <field name="context">{
             'grid_anchor': context_today().strftime('%Y-%m-%d'),
             'grid_range': 'week',
-            'default_employee_id': [('user_id', '=', uid)],
             'search_default_my_timesheet': 1,
             'default_is_timesheet': 1
             }
