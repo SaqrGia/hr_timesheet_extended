@@ -37,7 +37,6 @@ This module extends the standard HR Timesheet functionality with:
         'views/hr_timesheet_grid_views.xml',
         'views/hr_timesheet_views.xml',
         'views/hr_timesheet_approval_views.xml',
-        'views/hr_contract_views.xml',
         'report/timesheet_approval_report_templates.xml'
     ],
 

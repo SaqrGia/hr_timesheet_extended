@@ -2,7 +2,7 @@
 from . import timesheet_approval_mixin
 from . import hr_timesheet
 from . import hr_timesheet_approval
-from . import hr_contract
+
 
 
 
