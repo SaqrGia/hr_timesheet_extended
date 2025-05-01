@@ -107,7 +107,7 @@
                     </group>
                     <notebook>
                         <page string="Timesheet Lines" name="timesheet_lines">
-                            <field name="timesheet_line_ids" readonly="state != 'draft'">
+                            <field name="timesheet_line_ids" readonly="state != 'draft'"  context="{'readonly_fields': ['holiday_id']}">
                                 <tree editable="bottom" decoration-muted="state == 'draft'"
                                       decoration-info="state == 'submitted'"
                                       decoration-warning="state in ['manager_approved', 'ceo_approved']"
@@ -336,6 +336,56 @@
                             context="{'group_by': 'has_validated_entries'}"/>
                 </group>
             </search>
+        </field>
+    </record>
+    <record id="view_hr_timesheet_approval_form_inherit" model="ir.ui.view">
+        <field name="name">hr.timesheet.approval.form.inherit</field>
+        <field name="model">hr.timesheet.approval</field>
+        <field name="inherit_id" ref="hr_timesheet_extended.view_hr_timesheet_approval_form"/>
+        <field name="arch" type="xml">
+            <!-- Agregar campo has_timeoff_entries invisible -->
+            <xpath expr="//field[@name='has_validated_entries']" position="after">
+                <field name="has_timeoff_entries" invisible="1"/>
+            </xpath>
+
+            <!-- Agregar alerta de advertencia para entradas de tiempo libre -->
+            <xpath expr="//div[@class='alert alert-warning']" position="after">
+                <div class="alert alert-warning" role="alert" invisible="not has_timeoff_entries">
+                    <strong>Warning:</strong>
+                    This approval contains timesheet entries linked to time off requests.
+                    These entries will be processed in the approval workflow, but their values cannot be modified directly.
+                    Any changes to these time off entries should be made through the Time Off application.
+                </div>
+            </xpath>
+
+            <!-- Agregar decoración para líneas de tiempo libre en la vista tree -->
+            <xpath expr="//field[@name='timesheet_line_ids']//tree" position="attributes">
+                <attribute name="decoration-bf">holiday_id or global_leave_id</attribute>
+            </xpath>
+
+            <!-- Agregar columnas de tiempo libre en la vista de líneas de timesheet -->
+            <xpath expr="//field[@name='timesheet_line_ids']//field[@name='state']" position="before">
+                <field name="holiday_id" invisible="1"/>
+                <field name="global_leave_id" invisible="1"/>
+            </xpath>
+        </field>
+    </record>
+
+    <!-- Actualizar la vista de búsqueda para añadir filtro de tiempo libre -->
+    <record id="view_hr_timesheet_approval_search_inherit" model="ir.ui.view">
+        <field name="name">hr.timesheet.approval.search.inherit</field>
+        <field name="model">hr.timesheet.approval</field>
+        <field name="inherit_id" ref="hr_timesheet_extended.view_hr_timesheet_approval_search"/>
+        <field name="arch" type="xml">
+            <xpath expr="//filter[@name='has_validated_entries']" position="after">
+                <filter string="Has Time Off Entries" name="has_timeoff_entries"
+                        domain="[('has_timeoff_entries', '=', True)]"/>
+            </xpath>
+
+            <xpath expr="//filter[@name='group_validated']" position="after">
+                <filter string="Has Time Off Entries" name="group_timeoff"
+                        context="{'group_by': 'has_timeoff_entries'}"/>
+            </xpath>
         </field>
     </record>
 

@@ -1,7 +1,9 @@
 from odoo import models, fields, api, _
 from odoo.exceptions import UserError, ValidationError
 from datetime import datetime, timedelta
+import logging
 
+_logger = logging.getLogger(__name__)
 
 class AccountAnalyticLine(models.Model):
     _inherit = ['account.analytic.line', 'timesheet.approval.mixin']
@@ -22,92 +24,115 @@ class AccountAnalyticLine(models.Model):
                                  compute_sudo=True, group_operator="sum")
     overtime_hours = fields.Float(string='Overtime Hours', compute='_compute_overtime_hours', store=True,
                                   compute_sudo=True, group_operator="sum")
+    calendar_event_id = fields.Many2one('calendar.event', string='Meeting')
 
     # Link to approval record
     timesheet_approval_id = fields.Many2one('hr.timesheet.approval', string='Timesheet Approval')
 
+    def _check_can_write(self, values):
+        # Si se está ejecutando en modo superusuario o con la bandera de omitir validación, permitir la modificación
+        if self.env.su or self.env.context.get('skip_timesheet_validation'):
+            return True
+
+        # Si no hay solicitudes de tiempo libre asociadas o no se están modificando campos críticos, permitir
+        if not any(line.holiday_id or line.global_leave_id for line in self):
+            return super()._check_can_write(values)
+
+        # Si solo se está actualizando el campo timesheet_approval_id, permitir
+        if set(values.keys()) <= {'timesheet_approval_id', 'state', 'submitted_date',
+                                  'manager_approval_date', 'ceo_approval_date', 'hr_approval_date',
+                                  'rejection_date', 'rejection_reason', 'rejected_by'}:
+            return True
+
+        # De lo contrario, seguir la lógica estándar de Odoo
+        if not self.env.su and any(line.holiday_id or line.global_leave_id for line in self):
+            raise UserError(
+                _('You cannot modify timesheets that are linked to time off requests. Please use the Time Off application to modify your time off requests instead.'))
+
+        return super()._check_can_write(values)
+
     def action_create_timesheet_approval(self):
         """
-        Create a timesheet approval request for the selected records.
-        Always uses the exact grid view date range.
+        إنشاء طلب موافقة على ورقة الوقت للسجلات المحددة.
+        يستخدم دائمًا نطاق تاريخ عرض الشبكة بالضبط.
         """
-        # This function is called from a button, it does not need ensure_one()
-        if not self:
-            raise UserError(_("No time records selected"))
+        # هذه الوظيفة يتم استدعاؤها من زر، لا تحتاج إلى ensure_one()
+        # if not self:
+        #     raise UserError(_("لم يتم تحديد سجلات وقت"))
+        # non_draft_lines = self.filtered(lambda line: line.state != 'draft')
+        # if non_draft_lines:
+        #     non_draft_dates = ", ".join(non_draft_lines.mapped(lambda l: l.date.strftime('%Y-%m-%d')))
+        #     raise UserError(
+        #         _("لا يمكن إنشاء طلب موافقة: بعض إدخالات ورقة الوقت (%s) ليست في حالة مسودة.") % non_draft_dates)
 
-        # تعديل: تحديد السجلات المحققة (validated) لإظهار تحذير بدلاً من منع العملية تماماً
+        # تحديد أنواع مختلفة من السطور التي تتطلب اهتمامًا خاصًا
         validated_lines = self.filtered(lambda line: line.validated)
+        timeoff_lines = self.filtered(lambda line: line.holiday_id or line.global_leave_id)
+
+        # تحضير رسائل تحذير إذا لزم الأمر
+        warnings = []
+
         if validated_lines:
-            # تغيير من رسالة خطأ إلى رسالة تحذير وعرضها للمستخدم
             validated_dates = ", ".join(validated_lines.mapped(lambda l: l.date.strftime('%Y-%m-%d')))
+            warnings.append(_(
+                "بعض إدخالات ورقة الوقت (%s) تم التحقق منها. سيتم تضمين هذه الإدخالات في "
+                "عملية الموافقة، ولكن لا يمكن تعديل قيمها.") % validated_dates)
 
-            # أنشئ رسالة تحذير بدلاً من منع العملية
-            return {
-                'type': 'ir.actions.client',
-                'tag': 'display_notification',
-                'params': {
-                    'title': _('Warning: Validated Timesheets'),
-                    'message': _(
-                        "Some timesheet entries (%s) have been validated. These entries will be included in the "
-                        "approval process, but their values cannot be modified.") % validated_dates,
-                    'sticky': False,
-                    'type': 'warning',
-                    'next': {
-                        'type': 'ir.actions.act_window_close'
-                    }
-                }
-            }
+        if timeoff_lines:
+            timeoff_dates = ", ".join(timeoff_lines.mapped(lambda l: l.date.strftime('%Y-%m-%d')))
+            warnings.append(_(
+                "بعض إدخالات ورقة الوقت (%s) مرتبطة بطلبات إجازة. سيتم تضمين هذه الإدخالات في "
+                "عملية الموافقة، ولكن لا يمكن تعديلها مباشرة.") % timeoff_dates)
 
-        # باقي الكود كما هو...
-        # Get the employee from the first record
+        # الحصول على الموظف من السجل الأول
         employee = self[0].employee_id
         if not employee:
-            raise UserError(_("Could not determine the employee to create the approval"))
+            raise UserError(_("تعذر تحديد الموظف لإنشاء الموافقة"))
 
-        # Get the grid view date range
-        grid_range = self.env.context.get('grid_range', 'week')  # Default to week if not specified
+        # الحصول على نطاق تاريخ عرض الشبكة
+        grid_range = self.env.context.get('grid_range', 'week')  # الافتراضي إلى أسبوع إذا لم يتم تحديده
         grid_anchor = self.env.context.get('grid_anchor')
 
-        # If grid_anchor is not provided, use current date
+        # إذا لم يتم توفير grid_anchor، استخدم التاريخ الحالي
         if not grid_anchor:
             grid_anchor = fields.Date.today()
         elif isinstance(grid_anchor, str):
             grid_anchor = fields.Date.from_string(grid_anchor)
 
-        # Calculate date_start and date_end based on grid_range using Odoo's logic
+        # حساب date_start و date_end بناءً على grid_range باستخدام منطق Odoo
         if grid_range == 'week':
-            # This uses Odoo's logic for determining the start/end of week
-            # First day is the anchor's week's Monday in Odoo 17, last day is Sunday
+            # هذا يستخدم منطق Odoo لتحديد بداية/نهاية الأسبوع
+            # اليوم الأول هو يوم الاثنين من أسبوع الارتكاز في Odoo 17، واليوم الأخير هو الأحد
             start_of_week = grid_anchor - timedelta(days=grid_anchor.weekday())
             date_start = start_of_week
             date_end = start_of_week + timedelta(days=6)
         elif grid_range == 'month':
-            # First day of the month
+            # أول يوم من الشهر
             date_start = grid_anchor.replace(day=1)
-            # Last day of the month
+            # آخر يوم من الشهر
             if grid_anchor.month == 12:
                 date_end = grid_anchor.replace(year=grid_anchor.year + 1, month=1, day=1) - timedelta(days=1)
             else:
                 date_end = grid_anchor.replace(month=grid_anchor.month + 1, day=1) - timedelta(days=1)
         elif grid_range == 'year':
-            # First day of the year
+            # أول يوم من السنة
             date_start = grid_anchor.replace(month=1, day=1)
-            # Last day of the year
+            # آخر يوم من السنة
             date_end = grid_anchor.replace(year=grid_anchor.year + 1, month=1, day=1) - timedelta(days=1)
         else:
-            # Fallback to day view
+            # العودة إلى عرض اليوم
             date_start = grid_anchor
             date_end = grid_anchor
 
-        # Double-check with actual grid columns if available in context
+        # التحقق مرة أخرى من أعمدة الشبكة الفعلية إذا كانت متوفرة في السياق
         if self.env.context.get('grid_dates'):
-            # Use the exact dates from grid view if available
+            # استخدام التواريخ الدقيقة من عرض الشبكة إذا كانت متوفرة
             grid_dates = self.env.context.get('grid_dates')
             if grid_dates and len(grid_dates) > 0:
                 date_start = min(grid_dates)
                 date_end = max(grid_dates)
 
-        # Check if an approval request already exists for this employee and period
+        # التحقق مما إذا كان طلب موافقة موجود بالفعل لهذا الموظف والفترة
         existing_approval = self.env['hr.timesheet.approval'].search([
             ('employee_id', '=', employee.id),
             ('date_start', '=', date_start),
@@ -115,10 +140,10 @@ class AccountAnalyticLine(models.Model):
         ], limit=1)
 
         if existing_approval:
-            raise UserError(_("An approval request already exists for the period from %s to %s") %
+            raise UserError(_("يوجد بالفعل طلب موافقة للفترة من %s إلى %s") %
                             (date_start, date_end))
 
-        # Create an approval request
+        # إنشاء طلب موافقة
         approval_vals = {
             'employee_id': employee.id,
             'date_start': date_start,
@@ -129,20 +154,36 @@ class AccountAnalyticLine(models.Model):
 
         timesheet_approval = self.env['hr.timesheet.approval'].create(approval_vals)
 
-        # Update the time records to link them with the request
-        self.write({
-            'timesheet_approval_id': timesheet_approval.id
-        })
+        # إذا كانت هناك تحذيرات، قم بتسجيلها في سجل الدردشة للسجل المنشأ
+        if warnings:
+            timesheet_approval.message_post(
+                body=_("تحذير: يحتوي طلب الموافقة هذا على إدخالات ورقة وقت خاصة:\n%s") % "\n".join(warnings)
+            )
 
-        # Show the new approval request
-        return {
-            'name': _('Timesheet Approval Request'),
+        # تحديث السطور القياسية دون استخدام sudo()
+        standard_lines = self - timeoff_lines
+        if standard_lines:
+            standard_lines.write({
+                'timesheet_approval_id': timesheet_approval.id
+            })
+
+        # بالنسبة لسطور الإجازة، نستخدم sudo() مع سياق خاص
+        if timeoff_lines:
+            timeoff_lines.sudo().with_context(skip_timesheet_validation=True).write({
+                'timesheet_approval_id': timesheet_approval.id
+            })
+
+        # إظهار طلب الموافقة على ورقة الوقت الجديد مع إشعار
+        result = {
+            'name': _('طلب الموافقة على ورقة الوقت'),
             'type': 'ir.actions.act_window',
             'res_model': 'hr.timesheet.approval',
             'res_id': timesheet_approval.id,
             'view_mode': 'form',
             'target': 'current',
         }
+
+        return result
 
     @api.depends('employee_id')
     def _compute_manager_id(self):
@@ -229,7 +270,7 @@ class AccountAnalyticLine(models.Model):
 
         # تعيين حالة السجلات المحققة مباشرة دون استدعاء السوبر
         if validated_records:
-            validated_records.write({
+            validated_records.sudo().write({  # <-- التعديل هنا
                 'state': 'manager_approved',
                 'manager_approval_date': fields.Datetime.now(),
             })

@@ -27,6 +27,8 @@ This module extends the standard HR Timesheet functionality with:
         'web',
         'hr_work_entry',
         'hr_payroll',
+        'project_timesheet_holidays',
+        'calendar',
     ],
     'data': [
         'security/hr_timesheet_security.xml',
@@ -37,7 +39,9 @@ This module extends the standard HR Timesheet functionality with:
         'views/hr_timesheet_grid_views.xml',
         'views/hr_timesheet_views.xml',
         'views/hr_timesheet_approval_views.xml',
+        'views/calendar_event_views.xml',
         'report/timesheet_approval_report_templates.xml'
+
     ],
 
     'installable': True,

@@ -17,7 +17,8 @@ class HrTimesheetApproval(models.Model):
                                   default=lambda self: self.env.user.employee_id, tracking=True)
     department_id = fields.Many2one('hr.department', string='Department', related='employee_id.department_id',
                                     store=True)
-
+    has_timeoff_entries = fields.Boolean(string='Has Time Off Entries', compute='_compute_has_special_entries',
+                                         store=True)
     date_start = fields.Date(string='Start Date', required=True, tracking=True)
     date_end = fields.Date(string='End Date', required=True, tracking=True)
 
@@ -65,6 +66,16 @@ class HrTimesheetApproval(models.Model):
     payroll_batch_id = fields.Many2one('hr.payslip.run', string='Payroll Batch', readonly=True,
                                        copy=False)
 
+    @api.depends('timesheet_line_ids', 'timesheet_line_ids.holiday_id', 'timesheet_line_ids.global_leave_id',
+                 'timesheet_line_ids.validated')
+    def _compute_has_special_entries(self):
+        """Calcular si el timesheet approval tiene entradas especiales (tiempo libre o validadas)"""
+        for approval in self:
+            approval.has_validated_entries = any(
+                line.validated for line in approval.timesheet_line_ids if hasattr(line, 'validated'))
+
+            approval.has_timeoff_entries = any(
+                line.holiday_id or line.global_leave_id for line in approval.timesheet_line_ids)
     @api.depends('timesheet_line_ids', 'timesheet_line_ids.validated')
     def _compute_has_validated_entries(self):
         """حساب ما إذا كان طلب الموافقة يحتوي على سجلات محققة"""
@@ -213,107 +224,82 @@ class HrTimesheetApproval(models.Model):
     # Override methods from the mixin to update the related timesheet lines
     def action_submit(self):
         for approval in self:
-            # إذا كانت جميع السجلات محققة، نظهر تحذيراً ولكن نسمح بالعملية
-            if approval.has_validated_entries and len(approval.timesheet_line_ids) == len(
-                    approval.timesheet_line_ids.filtered('validated')):
-                approval.message_post(body=_("Warning: All timesheet entries in this approval are validated."))
+            # Verificar si hay líneas de tiempo libre y mostrar advertencia
+            timeoff_lines = approval.timesheet_line_ids.filtered(
+                lambda line: line.holiday_id or line.global_leave_id)
 
-            res = super(HrTimesheetApproval, approval).action_submit()
+            if timeoff_lines and not self.env.context.get('timeoff_warning_shown'):
+                approval.message_post(
+                    body=_("Warning: This approval contains time off entries that cannot be modified directly."))
 
-            # Update all timesheet lines
+            # Llamar al método original con contexto especial
+            res = super(HrTimesheetApproval, approval.with_context(skip_timesheet_validation=True)).action_submit()
+
+            # Actualizar todas las líneas de hoja de tiempo usando contexto de omisión
             for line in approval.timesheet_line_ids:
-                if not hasattr(line, 'validated') or not line.validated:
-                    line.write({
-                        'state': 'submitted',
-                        'submitted_date': approval.submitted_date,
-                    })
-                else:
-                    # للسجلات المحققة نقوم بتحديث الحالة فقط
-                    line.write({
-                        'state': 'submitted',
-                    })
+                line.with_context(skip_timesheet_validation=True).write({
+                    'state': 'submitted',
+                    'submitted_date': approval.submitted_date,
+                })
 
         return res
 
     def action_manager_approve(self):
+        self = self.with_context(skip_timesheet_validation=True)
         for approval in self:
             res = super(HrTimesheetApproval, approval).action_manager_approve()
 
-            # Update all timesheet lines
+            # Actualizar todas las líneas de hoja de tiempo usando contexto de omisión
             for line in approval.timesheet_line_ids:
-                if not hasattr(line, 'validated') or not line.validated:
-                    line.write({
-                        'state': 'manager_approved',
-                        'manager_approval_date': approval.manager_approval_date,
-                    })
-                else:
-                    # للسجلات المحققة نقوم بتحديث الحالة فقط
-                    line.write({
-                        'state': 'manager_approved',
-                    })
+                line.with_context(skip_timesheet_validation=True).write({
+                    'state': 'manager_approved',
+                    'manager_approval_date': approval.manager_approval_date,
+                })
 
         return res
 
     def action_ceo_approve(self):
+        self = self.with_context(skip_timesheet_validation=True)
         for approval in self:
             res = super(HrTimesheetApproval, approval).action_ceo_approve()
 
-            # Update all timesheet lines
+            # Actualizar todas las líneas de hoja de tiempo usando contexto de omisión
             for line in approval.timesheet_line_ids:
-                if not hasattr(line, 'validated') or not line.validated:
-                    line.write({
-                        'state': 'ceo_approved',
-                        'ceo_approval_date': approval.ceo_approval_date,
-                    })
-                else:
-                    # للسجلات المحققة نقوم بتحديث الحالة فقط
-                    line.write({
-                        'state': 'ceo_approved',
-                    })
+                line.with_context(skip_timesheet_validation=True).write({
+                    'state': 'ceo_approved',
+                    'ceo_approval_date': approval.ceo_approval_date,
+                })
 
         return res
 
     def action_hr_approve(self):
+        self = self.with_context(skip_timesheet_validation=True)
         for approval in self:
             res = super(HrTimesheetApproval, approval).action_hr_approve()
 
-            # Update all timesheet lines
+            # Actualizar todas las líneas de hoja de tiempo usando contexto de omisión
             for line in approval.timesheet_line_ids:
-                if not hasattr(line, 'validated') or not line.validated:
-                    line.write({
-                        'state': 'hr_approved',
-                        'hr_approval_date': approval.hr_approval_date,
-                        'hr_manager_id': self.env.user.id,
-                    })
-                else:
-                    # للسجلات المحققة نقوم بتحديث الحالة فقط
-                    line.write({
-                        'state': 'hr_approved',
-                        'hr_manager_id': self.env.user.id,
-                    })
+                line.with_context(skip_timesheet_validation=True).write({
+                    'state': 'hr_approved',
+                    'hr_approval_date': approval.hr_approval_date,
+                    'hr_manager_id': self.env.user.id,
+                })
 
         return res
 
     def action_reject(self, reason=None):
+        self = self.with_context(skip_timesheet_validation=True)
         for approval in self:
             res = super(HrTimesheetApproval, approval).action_reject(reason)
 
-            # Update all timesheet lines
+            # Actualizar todas las líneas de hoja de tiempo usando contexto de omisión
             for line in approval.timesheet_line_ids:
-                if not hasattr(line, 'validated') or not line.validated:
-                    line.write({
-                        'state': 'rejected',
-                        'rejection_date': approval.rejection_date,
-                        'rejection_reason': reason,
-                        'rejected_by': self.env.user.id,
-                    })
-                else:
-                    # للسجلات المحققة نقوم بتحديث الحالة فقط
-                    line.write({
-                        'state': 'rejected',
-                        'rejection_reason': reason,
-                        'rejected_by': self.env.user.id,
-                    })
+                line.with_context(skip_timesheet_validation=True).write({
+                    'state': 'rejected',
+                    'rejection_date': approval.rejection_date,
+                    'rejection_reason': reason,
+                    'rejected_by': self.env.user.id,
+                })
 
         return res
 
